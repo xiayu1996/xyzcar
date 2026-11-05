@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小宇宙车机版 0.0.1 界面</title><style>
+:root{--bg:#f5f4f2;--fg:#161517;--muted:rgba(60,60,67,.6);--card:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0b0c;--fg:#f2f2f2;--muted:rgba(235,235,245,.6);--card:#161618}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"PingFang SC",sans-serif}
+main{max-width:1400px;margin:0 auto;padding:24px 16px}h1{font-size:24px;margin:0 0 4px}p{color:var(--muted);margin:0 0 20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:20px}
+figure{margin:0;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 5px 40px rgba(0,0,0,.08)}
+img{width:100%;display:block;background:#000}figcaption{padding:10px 14px}figcaption b{display:block}figcaption span{color:var(--muted);font-size:13px}
+@media (max-width:480px){.grid{grid-template-columns:1fr}}
+</style></head><body><main><h1>小宇宙车机版 0.0.1 · 界面截图</h1>
+<p>本地渲染（Paparazzi，不需要模拟器），用真实公开内容和真实封面。横屏 1920×1080 / 竖屏 1080×1920。这些图是用 App 的同一套组件拼出的页面，不是运行中 App 的截屏；完整交互以云端真机测试为准。</p>
+<div class="grid"><figure><img src="loginLight.png" loading="lazy" alt="登录 · 等待扫码"><figcaption><b>登录 · 等待扫码</b><span>横屏浅色。二维码固定白底，失效时点码即可刷新</span></figcaption></figure>
+<figure><img src="loginDarkScannedPortrait.png" loading="lazy" alt="登录 · 已扫码"><figcaption><b>登录 · 已扫码</b><span>竖屏深色。手机扫码后提示在手机上确认</span></figcaption></figure>
+<figure><img src="discoverDark.png" loading="lazy" alt="发现"><figcaption><b>发现</b><span>横屏深色。左侧播放面板、竖向导航、右侧内容；为你推荐 / 编辑精选 / 三个榜单等 9 个区块</span></figcaption></figure>
+<figure><img src="subscriptionsLight.png" loading="lazy" alt="订阅"><figcaption><b>订阅</b><span>星标节目置顶；节目主题色用作强调色</span></figcaption></figure>
+<figure><img src="historyDark.png" loading="lazy" alt="收听历史"><figcaption><b>收听历史</b><span>有进度的单集显示已听进度</span></figcaption></figure>
+<figure><img src="topListLight.png" loading="lazy" alt="最热榜"><figcaption><b>最热榜</b><span>真实榜单数据，15 集</span></figcaption></figure>
+<figure><img src="queueLight.png" loading="lazy" alt="播放队列"><figcaption><b>播放队列</b><span>100%：按钮在标题下方一行</span></figcaption></figure>
+<figure><img src="queueLightScaled130.png" loading="lazy" alt="播放队列 130%"><figcaption><b>播放队列 · 130%</b><span>Test Lab 发现标题被挤压，已修复</span></figcaption></figure>
+<figure><img src="podcastEpisodesLight.png" loading="lazy" alt="节目页"><figcaption><b>节目页</b><span>节目头部 + 单集列表，强调色取节目主题色</span></figcaption></figure>
+<figure><img src="episodeDetailLight.png" loading="lazy" alt="单集详情"><figcaption><b>单集详情</b><span>操作按钮 + shownotes 时间戳高亮</span></figcaption></figure>
+<figure><img src="episodeDetailDarkScaled130.png" loading="lazy" alt="单集详情 · 130% 缩放"><figcaption><b>单集详情 · 130% 缩放</b><span>深色，验证放大后不裁切</span></figcaption></figure>
+<figure><img src="portraitLightScaled130.png" loading="lazy" alt="竖屏 · 130% 缩放"><figcaption><b>竖屏 · 130% 缩放</b><span>播放条在底部，导航在播放条上方</span></figcaption></figure></div></main></body></html>

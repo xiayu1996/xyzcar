@@ -1,0 +1,15 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+signing/
+.logincheck/
+app/src/test/snapshots/
+app/src/test/resources/covers/
+.DS_Store
+.kotlin/
+# 安装包走 GitHub Release，不进仓库
+dist/
+# 用账号拉的内容快照（含个性化推荐和第三方 shownotes），本地用 login-check.sh dump 生成
+app/src/debug/assets/demo_snapshot.json

@@ -1,0 +1,52 @@
+package com.ryan.xyzcar
+
+import android.Manifest
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.activity.viewModels
+import com.ryan.xyzcar.ui.AppViewModel
+import com.ryan.xyzcar.ui.MainLayout
+import com.ryan.xyzcar.ui.screens.LoginScreen
+import com.ryan.xyzcar.ui.theme.XyzCarTheme
+
+class MainActivity : ComponentActivity() {
+    private val vm: AppViewModel by viewModels()
+
+    override fun onStart() {
+        super.onStart()
+        if (vm.loggedIn) vm.player.onForeground()
+    }
+
+    /** Firebase Test Lab 设备上这个系统设置为 "true"：自动进演示模式，避免 Robo 往登录框乱填号码发短信 */
+    private fun inTestLab(): Boolean =
+        runCatching { android.provider.Settings.System.getString(contentResolver, "firebase.test.lab") == "true" }.getOrDefault(false)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        if (BuildConfig.DEBUG && (intent.getBooleanExtra("demo", false) || inTestLab())) vm.enableDemo()
+        if (Build.VERSION.SDK_INT >= 33) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
+        setContent {
+            XyzCarTheme {
+                val base = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(base.density * vm.uiScale, base.fontScale)) {
+                    // 根节点用 Surface，保证深色模式下默认文字是浅色
+                    androidx.compose.material3.Surface(
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.background,
+                        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
+                    ) {
+                        if (vm.loggedIn) MainLayout(vm) else LoginScreen(vm)
+                    }
+                }
+            }
+        }
+    }
+}
