@@ -91,16 +91,46 @@ jobs:
       GITEE_REPO: xiayuryan/xyzcar
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Push main and tag to Gitee
+      # Gitee 只放 README + 发行包，不放源码
+      - name: Sync README-only main and tag to Gitee
+        env:
+          GIT_AUTHOR_NAME: xyzcar-ci
+          GIT_AUTHOR_EMAIL: ci@xyzcar.invalid
+          GIT_AUTHOR_DATE: "2026-11-06T00:00:00+08:00"
+          GIT_COMMITTER_NAME: xyzcar-ci
+          GIT_COMMITTER_EMAIL: ci@xyzcar.invalid
+          GIT_COMMITTER_DATE: "2026-11-06T00:00:00+08:00"
         run: |
           [ -n "$GITEE_TOKEN" ] || { echo "::error::missing secret GITEE_TOKEN"; exit 1; }
-          git push --force "https://${GITEE_REPO%%/*}:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git" \
-            refs/remotes/origin/main:refs/heads/main "refs/tags/$TAG:refs/tags/$TAG"
+          remote="https://${GITEE_REPO%%/*}:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
+          api="https://gitee.com/api/v5/repos/$GITEE_REPO/releases"
+          git init -q -b main mirror && cd mirror
+          cat > README.md <<'MD'
+          # 小宇宙车机版（安装包下载）
+
+          本仓库只提供国内下载，不含源码。
+
+          - 下载：右侧「发行版」→ `xyzcar-<版本>.apk`，可用同名 `.sha256` 校验
+          - 源码、使用说明、问题反馈：https://github.com/xiayu1996/xyzcar
+          - 许可：PolyForm Noncommercial 1.0.0，禁止任何商业用途
+
+          非官方第三方客户端，与小宇宙官方无关。
+          MD
+          git add README.md && git commit -q -m "docs: release mirror readme"
+          head=$(git rev-parse HEAD)
+          git push -q --force "$remote" main:main
+          # 删除指向其他提交的 tag（连同其发行版），保证 Gitee 上没有源码
+          git ls-remote --tags "$remote" | while read -r sha ref; do
+            t=${ref#refs/tags/}; t=${t%^{\}}
+            [ "$sha" = "$head" ] && continue
+            rid=$(curl -s "$api/tags/$t?access_token=$GITEE_TOKEN" | jq -r '.id // empty' || true)
+            [ -n "$rid" ] && curl -sf -X DELETE "$api/$rid?access_token=$GITEE_TOKEN" && echo "deleted release $t"
+            git push -q "$remote" --delete "refs/tags/$t" && echo "deleted tag $t"
+          done
+          git push -q "$remote" "$head:refs/tags/$TAG" 2>/dev/null || true
+          git ls-remote "$remote"
 
       - name: Collect assets
         run: |
