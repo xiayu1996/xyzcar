@@ -3,6 +3,11 @@ name: release
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已发布的 tag，只同步到 Gitee"
+        required: true
 
 permissions:
   contents: write
@@ -13,10 +18,11 @@ concurrency:
 
 jobs:
   release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check tag matches versionName
         run: |
@@ -25,12 +31,12 @@ jobs:
           [ "$tag" = "$ver" ] || { echo "::error::tag v$tag != versionName $ver"; exit 1; }
           echo "VERSION=$ver" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
 
       - name: Restore signing key
         env:
@@ -65,11 +71,64 @@ jobs:
             | grep -qi 4a9cd6451ec8d5bbe217f9bbd70d97c67652010347ac9befa3996a85a957befa \
             || { echo "::error::unexpected signing certificate"; exit 1; }
           cp "$apk" "xyzcar-$VERSION.apk"
+          sha256sum "xyzcar-$VERSION.apk" > "xyzcar-$VERSION.apk.sha256"
           rm -rf signing
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "xyzcar-$VERSION.apk" \
+          gh release create "$GITHUB_REF_NAME" "xyzcar-$VERSION.apk" "xyzcar-$VERSION.apk.sha256" \
             --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+
+  gitee:
+    needs: release
+    if: ${{ !cancelled() && (needs.release.result == 'success' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GITEE_REPO: xiayuryan/xyzcar
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Push main and tag to Gitee
+        run: |
+          [ -n "$GITEE_TOKEN" ] || { echo "::error::missing secret GITEE_TOKEN"; exit 1; }
+          git push --force "https://${GITEE_REPO%%/*}:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git" \
+            refs/remotes/origin/main:refs/heads/main "refs/tags/$TAG:refs/tags/$TAG"
+
+      - name: Collect assets
+        run: |
+          mkdir out
+          gh release download "$TAG" --pattern 'xyzcar-*' --dir out
+          cd out
+          for apk in *.apk; do
+            [ -f "$apk.sha256" ] && continue
+            sha256sum "$apk" > "$apk.sha256"
+            gh release upload "$TAG" "$apk.sha256"
+          done
+          sha256sum -c *.sha256
+
+      - name: Publish Gitee release
+        run: |
+          api="https://gitee.com/api/v5/repos/$GITEE_REPO/releases"
+          id=$(curl -s "$api/tags/$TAG?access_token=$GITEE_TOKEN" | jq -r '.id // empty' || true)
+          if [ -z "$id" ]; then
+            body=$(gh release view "$TAG" --json body -q .body)
+            id=$(curl -sf -X POST "$api" --form-string "access_token=$GITEE_TOKEN" \
+              --form-string "tag_name=$TAG" --form-string "name=$TAG" \
+              --form-string "body=${body:-$TAG}" --form-string "target_commitish=main" | jq -r .id)
+          fi
+          [ -n "$id" ] && [ "$id" != null ] || { echo "::error::create Gitee release failed"; exit 1; }
+          have=$(curl -sf "$api/$id/attach_files?access_token=$GITEE_TOKEN" | jq -r '.[].name')
+          for f in out/*; do
+            n=$(basename "$f")
+            grep -qxF "$n" <<<"$have" && { echo "skip $n"; continue; }
+            curl -sf -X POST "$api/$id/attach_files" --form-string "access_token=$GITEE_TOKEN" -F "file=@$f" | jq -r .name
+          done
+          curl -sf "https://gitee.com/api/v5/repos/$GITEE_REPO/releases/latest" | jq -r '.tag_name, (.assets[].browser_download_url)'
