@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Check tag matches versionName
         run: |
@@ -58,7 +60,7 @@ jobs:
           } > signing/signing.properties
 
       - name: Unit tests
-        run: ./gradlew --no-daemon testDebugUnitTest --tests '*ParsingTest' --tests '*AuthFlowTest' --tests '*PagedHolderTest'
+        run: ./gradlew --no-daemon testDebugUnitTest --tests '*ParsingTest' --tests '*AuthFlowTest' --tests '*PagedHolderTest' --tests '*UpdaterTest'
 
       - name: Build release APK
         run: ./gradlew --no-daemon assembleRelease
@@ -78,8 +80,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # 更新说明 = 上个 tag 以来的 feat / fix / perf 提交标题（App 内「检查更新」会显示）
+          prev=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          git log --no-merges --pretty='%s' "${prev:+$prev..}$GITHUB_REF_NAME" \
+            | grep -E '^(feat|fix|perf)(\(|!|:)' | sed 's/^/- /' > notes.md || true
+          [ -s notes.md ] || echo "- maintenance release" > notes.md
           gh release create "$GITHUB_REF_NAME" "xyzcar-$VERSION.apk" "xyzcar-$VERSION.apk.sha256" \
-            --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+            --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
 
   gitee:
     needs: release
