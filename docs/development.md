@@ -52,13 +52,21 @@ adb shell am start -n com.ryan.xyzcar/.MainActivity --ez demo true
 
 ## 发布
 
-推送 `v<versionName>` 标签触发 `.github/workflows/release.yml`：校验标签与 `app/build.gradle.kts` 的 versionName 一致 → 单元测试 → 签名构建 → 创建 GitHub Release 并上传 `xyzcar-<版本>.apk`。
+推送 `v<versionName>` 标签触发 `.github/workflows/release.yml`：
+
+1. 校验标签与 `app/build.gradle.kts` 的 versionName 一致 → 单元测试 → 签名构建 → 核对证书指纹
+2. 创建 GitHub Release，上传 `xyzcar-<版本>.apk` 和 `.sha256`；更新说明取上个 tag 以来的 `feat` / `fix` / `perf` 提交标题
+3. 同步到 [Gitee](https://gitee.com/xiayuryan/xyzcar)：仓库只保留一个 README 提交（不含源码），创建同名发行版并上传同样两个文件
+
+App 的「检查更新」先读 Gitee 最新发行版，失败再读 GitHub；下载同样 Gitee 优先，SHA-256 不一致就换源。
+
+补发某个已有 tag 到 Gitee：Actions → release → Run workflow，填 tag。
 
 ```bash
 git tag v0.0.2 && git push origin v0.0.2
 ```
 
-仓库 Secrets（一次性配置）：`SIGNING_KEYSTORE_BASE64`、`SIGNING_STORE_PASSWORD`、`SIGNING_KEY_ALIAS`、`SIGNING_KEY_PASSWORD`。
+仓库 Secrets：`SIGNING_KEYSTORE_BASE64`、`SIGNING_STORE_PASSWORD`、`SIGNING_KEY_ALIAS`、`SIGNING_KEY_PASSWORD`、`GITEE_TOKEN`（Gitee 私人令牌，`projects` 权限）。
 
 ## 提交规范
 

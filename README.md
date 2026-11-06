@@ -24,10 +24,11 @@
 - 方向盘按键：上一曲 / 下一曲 = 后退 15 / 前进 30 秒
 - 车机布局：横屏侧边导航，窄屏（分屏、竖屏）自动切底部导航
 - 浅色 / 深色 / 跟随系统，5 档显示大小，全程过渡动画
+- 应用内更新：国内走 Gitee，失败自动换 GitHub，下载后校验 SHA-256
 
 ## 安装
 
-1. 从 [Releases](https://github.com/xiayu1996/xyzcar/releases) 下载 `xyzcar-<版本>.apk`
+1. 下载 `xyzcar-<版本>.apk`：国内用 [Gitee 发行版](https://gitee.com/xiayuryan/xyzcar/releases)，或 [GitHub Releases](https://github.com/xiayu1996/xyzcar/releases)
 2. 任选一种方式装到车机：
    - **U 盘**：APK 放 U 盘根目录，用车机文件管理器打开安装
    - **ADB**：车机开启调试后执行 `adb install -r xyzcar-<版本>.apk`
@@ -43,6 +44,7 @@
 | 跳转时间点 | 点单集简介里的时间戳（如 `12:05`） |
 | 外观 / 显示大小 | 「我的」页 |
 | 车机信息 | 我的 → 车机信息（排查分屏、语音问题） |
+| 检查更新 | 我的 → 检查更新；首次安装需在系统设置里允许本应用安装应用 |
 
 已知限制：无离线下载；小迪语音暂不能打开本应用；能否进入分屏取决于车机系统。
 
