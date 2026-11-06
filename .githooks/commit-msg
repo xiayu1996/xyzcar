@@ -1,0 +1,30 @@
+#!/bin/sh
+# Enforce Conventional Commits 1.0, see .claude/rules/git-commit.md
+msg_file="$1"
+msg=$(grep -v '^#' "$msg_file")
+header=$(printf '%s\n' "$msg" | sed -n '/./{p;q;}')
+
+fail() {
+  echo "commit-msg: $1" >&2
+  echo "  header: $header" >&2
+  echo "  expected: <type>(<scope>): <subject>, see .claude/rules/git-commit.md" >&2
+  exit 1
+}
+
+case "$header" in
+  "Merge "*|"Revert \""*|"Reapply \""*|"fixup! "*|"squash! "*|"amend! "*) exit 0 ;;
+esac
+
+if printf '%s' "$msg" | LC_ALL=C grep -q "$(printf '[\200-\377]')"; then
+  fail "non-ASCII characters are not allowed (English only, no emoji)"
+fi
+
+types='feat|fix|refactor|perf|docs|test|build|ci|chore|style|revert'
+printf '%s' "$header" | grep -Eq "^($types)(\([a-z0-9][a-z0-9-]*\))?!?: [^A-Z ].*[^.]\$" \
+  || fail "invalid header"
+
+printf '%s' "$header" | grep -Eq '^[^(:]+\((dev|app|xyzcar|code|misc)\)' \
+  && fail "scope has no information, name the business domain or module"
+
+[ ${#header} -le 72 ] || fail "header longer than 72 chars"
+exit 0
