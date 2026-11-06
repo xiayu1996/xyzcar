@@ -89,3 +89,5 @@ gcloud config set storage/sliced_object_download_threshold 0
 
 - 设备：`MediumTablet.arm` API 32，中文，横 + 竖（占 2 次额度）；可用 `TESTLAB_MODEL` / `TESTLAB_API` 覆盖
 - 结果下载到 `.testlab/<时间>/`（已 gitignore）：每台设备的截图、`logcat`、录屏、`sitemap.png`
+- 只跑横屏：`TESTLAB_ORIENTATIONS=landscape`（占 1 次额度）
+- 先按脚本操作再自由探索：`TESTLAB_ROBO_SCRIPT=docs/testlab/update-flow.json`（我的 → 检查更新 → 下载 → 允许安装 → 安装）。验证更新流程时要把调试包的 versionName 临时改低于最新发行版

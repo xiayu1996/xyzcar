@@ -2,6 +2,7 @@
 # Firebase Test Lab Robo 测试：上传调试包 → 等结果 → 下载截图 / 日志到 .testlab/<时间>/
 # 用法：./scripts/testlab.sh [apk]   默认 dist/xyzcar-<版本>-debug.apk
 # 前置：gcloud auth login；gcloud config set project xyzcar-test
+# 可选：TESTLAB_ORIENTATIONS="landscape portrait"（默认两种）、TESTLAB_ROBO_SCRIPT=脚本.json（先按脚本操作再自由探索）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -14,13 +15,16 @@ ts=$(date +%Y%m%d-%H%M%S)
 out=".testlab/$ts"
 mkdir -p "$out"
 
-echo "[testlab] 上传 ${apk}，设备 ${model} API ${api} 横 + 竖"
+orients="${TESTLAB_ORIENTATIONS:-landscape portrait}"
+args=()
+for o in $orients; do args+=(--device "model=$model,version=$api,locale=zh_CN,orientation=$o"); done
+[ -n "${TESTLAB_ROBO_SCRIPT:-}" ] && args+=(--robo-script "$TESTLAB_ROBO_SCRIPT")
+echo "[testlab] 上传 ${apk}，设备 ${model} API ${api}（${orients}）"
 # gcloud 自己等测试结束；外层再加 25 分钟上限
 set +e
 perl -e 'alarm shift; exec @ARGV' 1500 gcloud firebase test android run \
   --type robo --app "$apk" \
-  --device "model=$model,version=$api,locale=zh_CN,orientation=landscape" \
-  --device "model=$model,version=$api,locale=zh_CN,orientation=portrait" \
+  "${args[@]}" \
   --timeout 5m --results-dir "xyzcar/$ts" --format=json \
   >"$out/result.json" 2>"$out/gcloud.log"
 rc=$?

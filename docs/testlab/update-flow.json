@@ -1,0 +1,16 @@
+[
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "我的"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 2000},
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "检查更新"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 8000},
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "发现新版本 v0.0.2，点击下载"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 45000},
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "允许安装后即可更新"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 3000},
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "允许来自此来源的应用"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 1000},
+  {"eventType": "PRESSED_BACK"},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 2000},
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "安装 v0.0.2"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 5000}
+]
