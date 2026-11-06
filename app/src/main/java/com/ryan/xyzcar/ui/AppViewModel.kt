@@ -16,6 +16,10 @@ import com.ryan.xyzcar.player.PlayerConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.ryan.xyzcar.BuildConfig
+import com.ryan.xyzcar.data.Updater
 import kotlinx.serialization.json.JsonElement
 import java.io.IOException
 
@@ -158,6 +162,51 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     fun updateTheme(m: com.ryan.xyzcar.ui.theme.ThemeMode) { themeMode = m; app.local.themeMode = m.key }
 
+    /** 应用内更新状态（「我的」里的检查更新行） */
+    var update by mutableStateOf<UpdateState>(UpdateState.Idle)
+        private set
+    private var updateJob: Job? = null
+
+    /** silent = 启动时的自动检查：每天最多一次，演示模式不查，同一版本只提示一次 */
+    fun checkUpdate(silent: Boolean) {
+        if (updateJob?.isActive == true) return
+        if (silent && (repo.demo || System.currentTimeMillis() - app.local.lastUpdateCheck < 24 * 3600_000L)) return
+        if (!silent) update = UpdateState.Checking
+        updateJob = viewModelScope.launch {
+            val r = runCatching { withContext(Dispatchers.IO) { app.updater.latest() } }
+            r.onSuccess { rel ->
+                app.local.lastUpdateCheck = System.currentTimeMillis()
+                val newer = Updater.isNewer(rel.version, BuildConfig.VERSION_NAME)
+                when {
+                    newer -> {
+                        update = UpdateState.Available(rel)
+                        if (silent && app.local.notifiedUpdate != rel.tag) {
+                            app.local.notifiedUpdate = rel.tag
+                            player.messages.value = "发现新版本 ${rel.tag}，可在「我的」里更新"
+                        }
+                    }
+                    !silent -> update = UpdateState.Latest
+                }
+            }.onFailure { e -> if (!silent) update = UpdateState.Failed("检查失败：${e.message}", null) }
+        }
+    }
+
+    fun downloadUpdate() {
+        val rel = when (val s = update) {
+            is UpdateState.Available -> s.release
+            is UpdateState.Failed -> s.release ?: return
+            else -> return
+        }
+        if (updateJob?.isActive == true) return
+        update = UpdateState.Downloading(rel, 0f)
+        updateJob = viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { app.updater.download(rel) { p -> update = UpdateState.Downloading(rel, p) } }
+            }.onSuccess { update = UpdateState.Ready(rel, it) }
+                .onFailure { update = UpdateState.Failed("下载失败：${it.message}", rel) }
+        }
+    }
+
     /** 全屏播放页（盖在内容上，从底部滑出；不进路由栈，返回键先关它） */
     var playerExpanded by mutableStateOf(false)
 
@@ -257,4 +306,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         player.release()
     }
+}
+
+sealed interface UpdateState {
+    data object Idle : UpdateState
+    data object Checking : UpdateState
+    data object Latest : UpdateState
+    data class Available(val release: Updater.Release) : UpdateState
+    data class Downloading(val release: Updater.Release, val progress: Float) : UpdateState
+    data class Ready(val release: Updater.Release, val file: java.io.File) : UpdateState
+    data class Failed(val message: String, val release: Updater.Release?) : UpdateState
 }

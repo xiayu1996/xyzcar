@@ -54,6 +54,16 @@ class LocalStore(context: Context) {
         }
         set(v) = prefs.edit().putInt("size_level", v.coerceIn(0, SIZE_SCALES.lastIndex)).remove("ui_scale").apply()
 
+    /** 上次成功检查更新的时间；自动检查每天最多一次 */
+    var lastUpdateCheck: Long
+        get() = prefs.getLong("last_update_check", 0L)
+        set(v) = prefs.edit().putLong("last_update_check", v).apply()
+
+    /** 已经提示过的新版本，同一版本只自动提示一次 */
+    var notifiedUpdate: String
+        get() = prefs.getString("notified_update", "") ?: ""
+        set(v) = prefs.edit().putString("notified_update", v).apply()
+
     var speed: Float
         get() = prefs.getFloat("speed", 1f)
         set(v) = prefs.edit().putFloat("speed", v).apply()

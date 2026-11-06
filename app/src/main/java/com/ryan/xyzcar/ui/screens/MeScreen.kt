@@ -3,6 +3,16 @@ package com.ryan.xyzcar.ui.screens
 import android.app.Activity
 import android.content.ContextWrapper
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.ryan.xyzcar.data.Updater
+import com.ryan.xyzcar.ui.UpdateState
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -137,6 +147,7 @@ private fun AccountColumn(vm: AppViewModel) {
     MenuRow(Icons.Filled.History, "收听历史") { vm.push(Route.History) }
     MenuRow(Icons.AutoMirrored.Filled.QueueMusic, "播放列表") { vm.push(Route.Queue) }
     MenuRow(Icons.Filled.DirectionsCar, "车机信息", "分屏、语音排查用") { vm.push(Route.Diagnostics) }
+    UpdateRow(vm)
     // 退出登录要点两次，避免在车上误触
     var armed by remember { mutableStateOf(false) }
     LaunchedEffect(armed) { if (armed) { delay(3_000); armed = false } }
@@ -151,6 +162,59 @@ private fun AccountColumn(vm: AppViewModel) {
     InfoRow("源码地址", REPO_URL.removePrefix("https://"), link = true) { runCatching { uri.openUri(REPO_URL) } }
     InfoRow("许可协议", LICENSE_NAME)
     Text(DISCLAIMER, style = MaterialTheme.typography.bodySmall, color = x.sub, modifier = Modifier.padding(top = 12.dp, bottom = 24.dp))
+}
+
+/** 检查更新 → 下载（带进度）→ 安装；首次安装先去系统设置允许本应用安装应用 */
+@Composable
+private fun UpdateRow(vm: AppViewModel) {
+    val x = Xyz
+    val ctx = LocalContext.current
+    var canInstall by remember { mutableStateOf(Updater.canInstall(ctx)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { canInstall = Updater.canInstall(ctx) }
+    val s = vm.update
+    val title = when (s) {
+        UpdateState.Idle -> "检查更新"
+        UpdateState.Checking -> "正在检查更新…"
+        UpdateState.Latest -> "已是最新版本"
+        is UpdateState.Available -> "发现新版本 ${s.release.tag}，点击下载"
+        is UpdateState.Downloading -> "正在下载 ${s.release.tag}"
+        is UpdateState.Ready -> if (canInstall) "安装 ${s.release.tag}" else "允许安装后即可更新"
+        is UpdateState.Failed -> if (s.release != null) "下载失败，点击重试" else "检查失败，点击重试"
+    }
+    val hint = when (s) {
+        is UpdateState.Downloading -> "${(s.progress * 100).toInt()}%"
+        is UpdateState.Ready -> if (canInstall) "下载完成，已校验" else "点击打开设置，允许本应用安装应用，再返回点安装"
+        is UpdateState.Failed -> s.message
+        else -> "当前 ${BuildConfigInfo.VERSION}"
+    }
+    MenuRow(Icons.Filled.SystemUpdate, title, hint, danger = s is UpdateState.Failed) {
+        when (s) {
+            UpdateState.Idle, UpdateState.Latest -> vm.checkUpdate(silent = false)
+            is UpdateState.Failed -> if (s.release != null) vm.downloadUpdate() else vm.checkUpdate(silent = false)
+            is UpdateState.Available -> vm.downloadUpdate()
+            is UpdateState.Ready -> runCatching {
+                ctx.startActivity(if (canInstall) Updater.installIntent(ctx, s.file) else Updater.permissionIntent(ctx))
+            }
+            else -> Unit
+        }
+    }
+    val progress by animateFloatAsState((s as? UpdateState.Downloading)?.progress ?: 1f, tween(300), label = "updateProgress")
+    AnimatedVisibility(s is UpdateState.Downloading, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        LinearProgressIndicator(
+            progress = { progress },
+            color = x.accent,
+            trackColor = x.accentFill,
+            modifier = Modifier.fillMaxWidth().padding(start = 54.dp, end = 8.dp, bottom = 8.dp).height(6.dp).clip(RoundedCornerShape(3.dp)),
+        )
+    }
+    val notes = when (s) {
+        is UpdateState.Available -> s.release.notes
+        is UpdateState.Ready -> s.release.notes
+        else -> ""
+    }
+    AnimatedVisibility(notes.isNotEmpty(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        Text(notes, style = MaterialTheme.typography.bodySmall, color = x.sub, maxLines = 8, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 54.dp, end = 8.dp, bottom = 12.dp))
+    }
 }
 
 @Composable

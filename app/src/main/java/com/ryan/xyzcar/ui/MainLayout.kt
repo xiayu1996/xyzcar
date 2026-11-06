@@ -94,6 +94,8 @@ fun MainLayout(vm: AppViewModel) {
     }
 
     BackHandler(enabled = vm.playerExpanded || vm.stack.size > 1) { vm.back() }
+    // 启动后静默检查更新（每天最多一次）
+    LaunchedEffect(Unit) { vm.checkUpdate(silent = true) }
 
     val actions = remember {
         PlayerActions(
