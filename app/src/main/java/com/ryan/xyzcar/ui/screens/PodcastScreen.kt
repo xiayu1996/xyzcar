@@ -69,7 +69,7 @@ fun PodcastScreen(vm: AppViewModel, pid: String, onBack: (() -> Unit)?) {
                 onEnqueue = { actions.enqueue(e) }, showPodcast = false, playing = ps.episode?.eid == e.eid,
             )
         }
-        if (eps.error != null && eps.items.isNotEmpty()) item { ErrorBox(eps.error!!) { eps.loadMore() } }
+        if (eps.error != null && eps.items.isNotEmpty()) item { ErrorBox(eps.error!!) { eps.retry() } }
     }
     } }
 }
@@ -111,7 +111,7 @@ fun SubscribeButtons(vm: AppViewModel, p: Podcast, onUpdated: (Podcast) -> Unit)
                     onUpdated(updated?.let { u -> u.copy(coverUrl = u.coverUrl.ifEmpty { p.coverUrl }) } ?: fallback)
                     vm.repo.invalidate("pod:${p.pid}")
                     if (p.subscribed && fallback.subscribed != p.subscribed) vm.player.messages.value = "已取消订阅：${p.title}"
-                    vm.dropHolder("subs")
+                    vm.dropHolder("subs-shows:list")
                 }
                 .onFailure { vm.player.messages.value = errorText(it) }
             busy = false

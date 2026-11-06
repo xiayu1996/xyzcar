@@ -4,6 +4,7 @@ import com.ryan.xyzcar.data.api.XyzParser
 import com.ryan.xyzcar.player.PlayerConnection
 import com.ryan.xyzcar.ui.Fmt
 import com.ryan.xyzcar.ui.ShownotesParser
+import com.ryan.xyzcar.ui.screens.isTodo
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -104,5 +105,81 @@ class ParsingTest {
     fun shownotesTimestamps() {
         val ts = ShownotesParser.timestamps("<p>00:30 开场</p><p>12:05 正题</p><p>1:02:03 结尾</p><p>2024 年</p>")
         assertEquals(listOf(30, 725, 3723), ts.map { it.seconds })
+    }
+
+    // ---------- 0.0.2 新接口（2026-11 实测的结构，内容是编的） ----------
+
+    @Test
+    fun parseCategoryEpisodesFillsPodcast() {
+        val r = json.parseToJsonElement("""{"data":[
+            {"podcast":{"pid":"p9","title":"声音节目","image":{"middlePicUrl":"https://i.example/p9.jpg"},"color":{"original":"#112233","light":"#AABBCC","dark":"#001122"}},
+             "episode":{"eid":"e9","title":"一集","duration":1800,"payType":"FREE"},"readTrackInfo":{}},
+            {"podcast":{"pid":"p8","title":"付费节目"},"episode":{"eid":"e8","title":"付费一集","payType":"PAY_EPISODE"}},
+            {"podcast":{"pid":"p7","title":"没有单集"}}
+        ]}""").jsonObject
+        val eps = api.parseCategoryEpisodes(r)
+        assertEquals(listOf("e9", "e8"), eps.map { it.eid })
+        assertEquals("p9", eps[0].pid)
+        assertEquals("声音节目", eps[0].podcastTitle)
+        assertEquals("https://i.example/p9.jpg", eps[0].coverUrl)
+        assertEquals("#112233", eps[0].color?.original)
+        assertEquals(false, eps[0].paid)
+        assertEquals(true, eps[1].paid)
+    }
+
+    @Test
+    fun parseCategoriesWithIcons() {
+        val r = json.parseToJsonElement("""{"data":[
+            {"id":"c1","name":"商业","emoji":"🏷️","icon":{"picUrl":"https://i.example/c1.png","smallPicUrl":"https://i.example/c1.png@small"}},
+            {"id":"","name":"坏数据"}
+        ]}""").jsonObject
+        val cats = api.parseCategories(r)
+        assertEquals(1, cats.size)
+        assertEquals("商业", cats[0].name)
+        assertEquals("https://i.example/c1.png@small", cats[0].iconUrl)
+    }
+
+    /** 账号接口还返回手机号等字段：只取 uid / 昵称 / 头像 */
+    @Test
+    fun parseUserIgnoresPrivateFields() {
+        val r = json.parseToJsonElement("""{"data":{"uid":"u1","nickname":"昵称","phoneNumber":{"mobilePhoneNumber":"10000000000","areaCode":"+86"},
+            "avatar":{"picture":{"picUrl":"https://i.example/a.jpg","middlePicUrl":"https://i.example/a.jpg@middle"}}}}""").jsonObject
+        val u = api.parseUser(r["data"] as JsonObject)
+        assertEquals("u1", u.uid)
+        assertEquals("昵称", u.nickname)
+        assertEquals("https://i.example/a.jpg@middle", u.avatarUrl)
+        assertTrue("10000000000" !in u.toString())
+    }
+
+    @Test
+    fun parseSearchSkipsHeadersAndKeepsHighlight() {
+        val r = json.parseToJsonElement("""{"data":[
+            {"type":"HEADER","title":"节目"},
+            {"type":"PODCAST","pid":"p1","title":"辩论小会","payType":"FREE"},
+            {"type":"HEADER","title":"单集"},
+            {"type":"EPISODE","eid":"e1","title":"辩论？","payType":"FREE","isFinished":true,"podcast":{"pid":"p2","title":"无聊斋"}}
+        ],"highlightWord":{"words":["辩论"],"singleMaxHighlightTime":3}}""").jsonObject
+        val s = api.parseSearch(r)
+        assertEquals(listOf("p1"), s.podcasts.map { it.pid })
+        assertEquals(listOf("e1"), s.episodes.map { it.eid })
+        assertEquals(listOf("辩论"), s.highlight)
+        assertEquals(true, s.episodes[0].finished)
+        assertEquals("无聊斋", s.episodes[0].podcastTitle)
+    }
+
+    /** 「未听 + 在听」筛选：服务端标记听完、或只剩最后 30 秒的都算听完 */
+    @Test
+    fun todoFilter() {
+        val base = com.ryan.xyzcar.data.Episode("e", "p", "t", durationSec = 600)
+        assertTrue(base.isTodo())
+        assertTrue(base.copy(progressSec = 300).isTodo())
+        assertTrue(!base.copy(progressSec = 580).isTodo())
+        assertTrue(!base.copy(finished = true).isTodo())
+    }
+
+    @Test
+    fun recommendRefreshModule() {
+        val m = json.parseToJsonElement("""{"title":"为你推荐","target":[{"episode":{"eid":"e1","title":"a"}},{"episode":{"eid":"e2","title":"b"}}]}""").jsonObject
+        assertEquals(listOf("e1", "e2"), api.parseModule(m)?.episodes?.map { it.eid })
     }
 }

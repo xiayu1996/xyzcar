@@ -147,6 +147,36 @@ class LoginCheck {
         checkWith(api(tokens), tokens)
     }
 
+    /**
+     * 只读探测：XYZ_PROBE 指向一个文件，每行一个请求「METHOD path [json body]」。
+     * 原始返回写到 .logincheck/probe/NN.json（gitignore），终端只打印状态和结构，不打印内容。
+     * 只用于读接口；不要放会改账号状态的接口。
+     */
+    @Test
+    fun probe() {
+        assumeTrue(step == "probe")
+        val tokens = FileTokens(File(stateDir, "tokens.properties"))
+        require(tokens.isLoggedIn) { "还没有登录记录，请先完整跑一次 scripts/login-check.sh" }
+        val api = api(tokens)
+        val spec = File(requireNotNull(System.getenv("XYZ_PROBE")) { "缺少 XYZ_PROBE" })
+        val out = File(stateDir, "probe").apply { mkdirs() }
+        // 写接口一律拒绝（搜索接口名叫 create，但只是查询）
+        val write = Regex("(update|delete|remove|add|follow|star|comment|logout|set)", RegexOption.IGNORE_CASE)
+        runBlocking {
+            spec.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.forEachIndexed { i, line ->
+                val parts = line.split(" ", limit = 3)
+                val (m, path) = parts[0] to parts[1]
+                require(path == "/v1/search/create" || (!write.containsMatchIn(path) && !path.endsWith("/create"))) { "probe 只允许读接口：$path" }
+                val body = parts.getOrNull(2)?.let { kotlinx.serialization.json.Json.parseToJsonElement(it) as kotlinx.serialization.json.JsonObject }
+                val name = "%02d".format(i)
+                runCatching { api.rawForProbe(m, path, body) }.fold(
+                    { r -> File(out, "$name.json").writeText(r.toString()); log("probe $name OK  $m $path → ${r.keys}") },
+                    { e -> File(out, "$name.json").writeText("""{"error":${kotlinx.serialization.json.JsonPrimitive(e.message ?: e.toString())}}"""); log("probe $name ERR $m $path → ${e.message}") },
+                )
+            }
+        }
+    }
+
     /** 只读：打印发现页（为你推荐 / 编辑精选）和三个榜单的前几条，确认内容真实可用 */
     @Test
     fun show() {

@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
         setContent {
-            XyzCarTheme {
+            XyzCarTheme(vm.themeMode) {
                 val base = LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(base.density * vm.uiScale, base.fontScale)) {
                     // 根节点用 Surface，保证深色模式下默认文字是浅色

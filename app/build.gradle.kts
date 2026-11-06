@@ -21,8 +21,8 @@ android {
         applicationId = "com.ryan.xyzcar"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = 2
+        versionName = "0.0.2"
     }
 
     signingConfigs {
@@ -95,7 +95,7 @@ dependencies {
 // 登录验证工具（scripts/login-check.sh 调用）：把环境变量转给单元测试进程，并且每次都重新跑
 tasks.withType<Test>().configureEach {
     val step = providers.environmentVariable("XYZ_STEP").orNull
-    listOf("XYZ_STEP", "XYZ_APP_VERSION", "XYZ_APP_BUILD", "XYZ_NO_OPEN", "XYZ_SHAPE", "XYZ_SHOW_N").forEach { k ->
+    listOf("XYZ_STEP", "XYZ_APP_VERSION", "XYZ_APP_BUILD", "XYZ_NO_OPEN", "XYZ_SHAPE", "XYZ_SHOW_N", "XYZ_PROBE").forEach { k ->
         providers.environmentVariable(k).orNull?.let { environment(k, it) }
     }
     environment("XYZ_STATE_DIR", rootProject.file(".logincheck").absolutePath)

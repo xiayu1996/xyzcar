@@ -43,6 +43,32 @@ class PlayerConnection(private val context: Context) {
     )
     val state: StateFlow<PlayerUi> = _state.asStateFlow()
 
+    /** 定时关闭：到点的时间（elapsedRealtime 毫秒），null 表示没开 */
+    val sleepEndsAt = MutableStateFlow<Long?>(null)
+    private var sleepJob: kotlinx.coroutines.Job? = null
+
+    /** 定时关闭：关 → 15 → 30 → 60 分钟 → 关 */
+    fun cycleSleep() {
+        val left = sleepEndsAt.value?.let { (it - android.os.SystemClock.elapsedRealtime()) / 60_000 }
+        val next = when {
+            left == null -> 15
+            left < 15 -> 30
+            left < 30 -> 60
+            else -> null
+        }
+        sleepJob?.cancel()
+        if (next == null) { sleepEndsAt.value = null; messages.value = "已关闭定时"; return }
+        val end = android.os.SystemClock.elapsedRealtime() + next * 60_000L
+        sleepEndsAt.value = end
+        messages.value = "$next 分钟后暂停播放"
+        sleepJob = scope.launch {
+            delay(next * 60_000L)
+            controller?.pause()
+            sleepEndsAt.value = null
+            refresh()
+        }
+    }
+
     /** 一次性提示（例如音频地址取不到） */
     val messages = MutableStateFlow<String?>(null)
 

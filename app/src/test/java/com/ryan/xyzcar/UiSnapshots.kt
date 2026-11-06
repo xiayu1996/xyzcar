@@ -19,6 +19,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,26 +45,37 @@ import com.android.resources.ScreenOrientation
 import com.ryan.xyzcar.data.DemoData
 import com.ryan.xyzcar.data.Episode
 import com.ryan.xyzcar.player.PlayerUi
-import com.ryan.xyzcar.ui.NavBar
+import com.ryan.xyzcar.ui.BottomNav
 import com.ryan.xyzcar.ui.NavRail
 import com.ryan.xyzcar.ui.Tab
 import com.ryan.xyzcar.ui.components.BigButton
 import com.ryan.xyzcar.ui.components.Chip
+import com.ryan.xyzcar.ui.components.ColorChip
 import com.ryan.xyzcar.ui.components.Cover
 import com.ryan.xyzcar.ui.components.EpisodeRow
+import com.ryan.xyzcar.ui.components.FullPlayer
+import com.ryan.xyzcar.ui.components.MiniPlayer
 import com.ryan.xyzcar.ui.components.PlayerActions
-import com.ryan.xyzcar.ui.components.PlayerPanelTall
-import com.ryan.xyzcar.ui.components.PlayerPanelWide
 import com.ryan.xyzcar.ui.components.PodcastRow
 import com.ryan.xyzcar.ui.components.RoundIconButton
 import com.ryan.xyzcar.ui.components.ScreenHeader
 import com.ryan.xyzcar.ui.components.SectionTitle
+import com.ryan.xyzcar.ui.screens.CategoryChip
+import com.ryan.xyzcar.ui.screens.EpisodePager
+import com.ryan.xyzcar.ui.screens.InfoRow
 import com.ryan.xyzcar.ui.screens.LoginContent
-import com.ryan.xyzcar.ui.screens.PodcastCards
+import com.ryan.xyzcar.ui.screens.MenuRow
 import com.ryan.xyzcar.ui.screens.QueueRow
+import com.ryan.xyzcar.ui.screens.RecommendCard
+import com.ryan.xyzcar.ui.screens.SearchPill
+import com.ryan.xyzcar.ui.screens.ThemeCard
+import com.ryan.xyzcar.ui.screens.TickSlider
 import com.ryan.xyzcar.data.api.XyzApi
-import com.ryan.xyzcar.ui.theme.Accented
+import com.ryan.xyzcar.data.Category
+import com.ryan.xyzcar.ui.theme.Chroma
 import com.ryan.xyzcar.ui.theme.Dims
+import com.ryan.xyzcar.ui.theme.ThemeMode
+import com.ryan.xyzcar.ui.theme.Xyz
 import com.ryan.xyzcar.ui.theme.XyzCarTheme
 import org.junit.Rule
 import org.junit.Test
@@ -110,8 +125,9 @@ class UiSnapshots {
         episode = DemoData.episodes.getOrElse(1) { DemoData.episodes.first() }, isPlaying = true, positionMs = 754_000, durationMs = 4_200_000, speed = 1.25f, connected = true,
     )
 
-    private fun config(night: Boolean, portrait: Boolean = false) = DeviceConfig.PIXEL_C.copy(
-        screenWidth = if (portrait) 1080 else 1920, screenHeight = if (portrait) 1920 else 1080, xdpi = 240, ydpi = 240,
+    /** 截图用的车机横屏：1920×1080 @ 240dpi = 1280×720dp（和原型画板一样大） */
+    private fun config(night: Boolean, portrait: Boolean = false, widthPx: Int = 1920) = DeviceConfig.PIXEL_C.copy(
+        screenWidth = if (portrait) 1080 else widthPx, screenHeight = if (portrait) 1920 else 1080, xdpi = 240, ydpi = 240,
         density = ResDensity.HIGH, softButtons = false,
         orientation = if (portrait) ScreenOrientation.PORTRAIT else ScreenOrientation.LANDSCAPE,
         nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT,
@@ -123,193 +139,203 @@ class UiSnapshots {
         CompositionLocalProvider(LocalDensity provides Density(d.density * scale, d.fontScale), content = content)
     }
 
+    /** 和 App 一样的外框：左侧导航 | 内容 + 迷你播放条 */
     @Composable
-    private fun Landscape(tab: Tab?, content: @Composable () -> Unit) = androidx.compose.material3.Surface(
-        color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground,
-    ) {
-        Row(
-            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            PlayerPanelTall(playing, 3, noop, Modifier.weight(0.4f))
-            NavRail(tab, false, {}, {})
-            Box(Modifier.weight(0.6f).fillMaxHeight()) { Column { content() } }
+    private fun Landscape(tab: Tab?, content: @Composable () -> Unit) = androidx.compose.material3.Surface(color = Xyz.bg, contentColor = Xyz.text) {
+        Row(Modifier.fillMaxSize().background(Xyz.bg)) {
+            NavRail(tab) {}
+            Column(Modifier.weight(1f).fillMaxHeight().padding(end = 24.dp, bottom = 16.dp)) {
+                Column(Modifier.weight(1f).fillMaxWidth().padding(start = 8.dp, top = 12.dp)) { content() }
+                Spacer(Modifier.height(12.dp))
+                MiniPlayer(playing, 3, noop)
+            }
         }
     }
 
-    @Composable
-    private fun Subscriptions() {
-        ScreenHeader("我的订阅", null) { RoundIconButton(Icons.Filled.Refresh, "刷新", plain = true) {} }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            items(DemoData.podcasts) { PodcastRow(it) {} }
-        }
-    }
+    private val eps get() = DemoData.allEpisodes()
 
-    @OptIn(ExperimentalLayoutApi::class)
     @Composable
     private fun Discover() {
-        ScreenHeader("发现", null) { RoundIconButton(Icons.Filled.Refresh, "刷新", plain = true) {} }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-            item {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    listOf("最热榜", "锋芒榜", "新星榜", "分类", "编辑精选").forEach { Chip(it) {} }
-                }
-            }
-            DemoData.sections.forEachIndexed { i, sec ->
-                item("t$i") { SectionTitle(sec.title) }
-                if (sec.podcasts.isNotEmpty()) item("p$i") { PodcastCards(sec.podcasts) {} }
-                items(sec.episodes.take(3), key = { "e$i-${it.eid}" }) { e -> EpisodeRow(e, {}, {}, {}, playing = e.eid == playing.episode?.eid) }
-            }
+        val x = Xyz
+        ScreenHeader("发现", null) { SearchPill(Modifier.width(360.dp)) {} }
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { ColorChip("分类", Chroma(x.accentFill, x.accentBorder, x.accentText)) {} }
+            item { ColorChip("最热榜", x.peach) {} }
+            item { ColorChip("锋芒榜", x.lime) {} }
+            item { ColorChip("新星榜", x.lavender) {} }
+            item { ColorChip("编辑精选", Chroma(x.fill, x.border, x.text)) {} }
         }
+        SectionTitle("为你推荐", "换一批") {}
+        EpisodePager(eps.take(9), playing.episode?.eid, true, {}, {})
     }
 
-    @OptIn(ExperimentalLayoutApi::class)
-    @Composable
-    private fun EpisodeDetail(ep: Episode) {
-        Accented(ep.color) {
-            Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                ScreenHeader("单集详情", {})
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Cover(ep.coverUrl, 168.dp, title = ep.podcastTitle, color = ep.color)
-                    Spacer(Modifier.width(24.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(ep.title, style = MaterialTheme.typography.titleLarge, maxLines = 3)
-                        Spacer(Modifier.height(8.dp))
-                        Text(ep.podcastTitle, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                        Text("1 小时 10 分 · 11月3日", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(Dims.gap), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    BigButton("继续播放") {}
-                    BigButton("加入队列", secondary = true) {}
-                    BigButton("查看节目", secondary = true) {}
-                }
-                Text("节目简介", style = MaterialTheme.typography.titleLarge)
-                Text(
-                    buildAnnotatedString {
-                        listOf("00:30" to "开场", "12:05" to "正题：城市与记忆", "1:02:03" to "结尾").forEach { (t, s) ->
-                            withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)) { append(t) }
-                            append(" $s\n")
-                        }
-                    },
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            }
-        }
-    }
-
-    @Test fun subscriptionsLight() {
+    @Test fun discoverLight() {
         paparazzi.unsafeUpdateConfig(config(night = false))
-        shot { XyzCarTheme { Landscape(Tab.Subscriptions) { Subscriptions() } } }
+        shot { XyzCarTheme(ThemeMode.Light) { Landscape(Tab.Discover) { Discover() } } }
     }
 
     @Test fun discoverDark() {
         paparazzi.unsafeUpdateConfig(config(night = true))
-        shot { XyzCarTheme { Landscape(Tab.Discover) { Discover() } } }
+        shot { XyzCarTheme(ThemeMode.Dark) { Landscape(Tab.Discover) { Discover() } } }
     }
 
-    @Test fun episodeDetailLight() {
+    @Composable
+    private fun Recommend() {
+        val cats = listOf(Category("all", "综合")) + DemoData.categories.map { it.copy(name = it.name.substringAfter(' ')) }
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 16.dp)) {
+            items(cats.size) { i -> CategoryChip(cats[i], i == 0) {} }
+        }
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(440.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            items(eps.take(4).size) { i -> RecommendCard(eps[i], i == 1, {}, {}) }
+        }
+    }
+
+    @Test fun recommendLight() {
         paparazzi.unsafeUpdateConfig(config(night = false))
-        shot { XyzCarTheme { Landscape(null) { EpisodeDetail(DemoData.episodes.getOrElse(1) { DemoData.episodes.first() }) } } }
+        shot { XyzCarTheme(ThemeMode.Light) { Landscape(Tab.Recommend) { Recommend() } } }
     }
 
-    @Test fun episodeDetailDarkScaled130() {
+    @Test fun recommendDark() {
         paparazzi.unsafeUpdateConfig(config(night = true))
-        shot { XyzCarTheme { Scaled(1.3f) { Landscape(null) { EpisodeDetail(DemoData.episodes.getOrElse(1) { DemoData.episodes.first() }) } } } }
+        shot { XyzCarTheme(ThemeMode.Dark) { Landscape(Tab.Recommend) { Recommend() } } }
     }
 
-    @Test fun portraitLightScaled130() {
-        paparazzi.unsafeUpdateConfig(config(night = false, portrait = true))
-        shot {
-            XyzCarTheme {
-                Scaled(1.3f) { androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.background) {
-                    Column(
-                        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Column(Modifier.weight(1f).fillMaxWidth()) { Discover() }
-                        NavBar(Tab.Discover, false, {}, {})
-                        PlayerPanelWide(playing, 3, noop)
-                    }
-                } }
+    @Composable
+    private fun Updates() {
+        ScreenHeader("更新", null) {
+            RoundIconButton(Icons.Filled.Refresh, "刷新", plain = true) {}
+            BigButton("我的订阅", tinted = true, icon = Icons.Filled.Layers) {}
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+            Chip("未听 + 在听", selected = true) {}
+            Chip("全部") {}
+        }
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(560.dp),
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
+        ) {
+            val list = eps.take(8).mapIndexed { i, e -> if (i == 0) e.copy(progressSec = e.durationSec / 3) else e }
+            items(list.size) { i -> EpisodeRow(list[i], {}, {}, {}, playing = i == 1) }
+        }
+    }
+
+    @Test fun updatesLight() {
+        paparazzi.unsafeUpdateConfig(config(night = false))
+        shot { XyzCarTheme(ThemeMode.Light) { Landscape(Tab.Subscriptions) { Updates() } } }
+    }
+
+    @Test fun updatesDarkScaled130() {
+        paparazzi.unsafeUpdateConfig(config(night = true))
+        shot { XyzCarTheme(ThemeMode.Dark) { Scaled(1.3f) { Landscape(Tab.Subscriptions) { Updates() } } } }
+    }
+
+    @Test fun searchResultsLight() {
+        paparazzi.unsafeUpdateConfig(config(night = false))
+        val k = eps.first().title.take(2)
+        shot { XyzCarTheme(ThemeMode.Light) { Landscape(Tab.Search) {
+            ScreenHeader("搜索", null)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                Chip("综合", selected = true) {}; Chip("节目") {}; Chip("单集") {}
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+                Column(Modifier.width(440.dp)) {
+                    SectionTitle("相关节目", "更多") {}
+                    DemoData.podcasts.take(3).forEach { PodcastRow(it, listOf(k)) {} }
+                }
+                Column(Modifier.weight(1f)) {
+                    SectionTitle("单集", "更多") {}
+                    eps.take(4).forEachIndexed { i, e -> EpisodeRow(if (i == 3) e.copy(paid = true) else e, {}, {}, {}, highlightWords = listOf(k)) }
+                }
+            }
+        } } }
+    }
+
+    @Composable
+    private fun Me() {
+        Row(horizontalArrangement = Arrangement.spacedBy(48.dp)) {
+            Column(Modifier.width(520.dp)) {
+                Text("演示账号", style = MaterialTheme.typography.headlineLarge, color = Xyz.text)
+                Text("小宇宙账号 · 已登录", style = MaterialTheme.typography.bodyMedium, color = Xyz.sub)
+                Spacer(Modifier.height(16.dp))
+                MenuRow(Icons.Filled.History, "收听历史") {}
+                MenuRow(Icons.Filled.DirectionsCar, "车机信息", "分屏、语音排查用") {}
+                InfoRow("版本", "v0.0.2")
+                InfoRow("源码地址", "github.com/xiayu1996/xyzcar", link = true) {}
+                InfoRow("许可协议", "PolyForm 非商用 1.0.0")
+            }
+            Column(Modifier.weight(1f)) {
+                Text("外观", style = MaterialTheme.typography.titleLarge, color = Xyz.text, modifier = Modifier.padding(bottom = 14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    ThemeMode.entries.forEach { m -> ThemeCard(m, m == ThemeMode.System, Modifier.weight(1f)) {} }
+                }
+                Text("显示大小", style = MaterialTheme.typography.titleLarge, color = Xyz.text, modifier = Modifier.padding(top = 36.dp))
+                TickSlider(2, com.ryan.xyzcar.data.SIZE_LABELS) {}
             }
         }
+    }
+
+    @Test fun meLight() {
+        paparazzi.unsafeUpdateConfig(config(night = false))
+        shot { XyzCarTheme(ThemeMode.Light) { Landscape(Tab.Me) { Me() } } }
+    }
+
+    @Test fun playerFull() {
+        paparazzi.unsafeUpdateConfig(config(night = false))
+        shot { XyzCarTheme(ThemeMode.Light) { FullPlayer(playing, 15, noop) } }
+    }
+
+    /** 分屏 1/3：底部导航 + 窄迷你播放条 */
+    @Test fun narrowSplitLight() {
+        paparazzi.unsafeUpdateConfig(config(night = false, widthPx = 630))
+        shot { XyzCarTheme(ThemeMode.Light) { androidx.compose.material3.Surface(color = Xyz.bg) {
+            Column(Modifier.fillMaxSize()) {
+                Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+                    ScreenHeader("发现", null) { RoundIconButton(Icons.Filled.Search, "搜索") {} }
+                    SectionTitle("为你推荐")
+                    eps.take(4).forEach { EpisodeRow(it, {}, {}) }
+                }
+                MiniPlayer(playing, 3, noop, Modifier.padding(horizontal = 12.dp))
+                BottomNav(Tab.Discover) {}
+            }
+        } } }
     }
 
     private val fakeQr = XyzApi.LoginQr("demo", "https://h5.xiaoyuzhoufm.com/oauth?qrcode_id=000000000000000000000000")
 
     @Test fun loginLight() {
         paparazzi.unsafeUpdateConfig(config(night = false))
-        shot { XyzCarTheme { androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.background) {
+        shot { XyzCarTheme(ThemeMode.Light) { androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.background) {
             LoginContent(fakeQr, XyzApi.QrState.WAITING, null, {}, {})
         } } }
     }
 
     @Test fun loginDarkScannedPortrait() {
         paparazzi.unsafeUpdateConfig(config(night = true, portrait = true))
-        shot { XyzCarTheme { androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.background) {
+        shot { XyzCarTheme(ThemeMode.Dark) { androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.background) {
             LoginContent(fakeQr, XyzApi.QrState.SCANNED, null, {}, null)
         } } }
-    }
-
-    @Test fun topListLight() {
-        paparazzi.unsafeUpdateConfig(config(night = false))
-        val eps = DemoData.topLists["HOT_EPISODES_IN_24_HOURS"] ?: DemoData.episodes
-        shot { XyzCarTheme { Landscape(Tab.Discover) {
-            ScreenHeader("最热榜", {})
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(eps) { e -> EpisodeRow(e, {}, {}, {}, playing = false) }
-            }
-        } } }
-    }
-
-    @Test fun historyDark() {
-        paparazzi.unsafeUpdateConfig(config(night = true))
-        shot { XyzCarTheme { Landscape(Tab.History) {
-            ScreenHeader("收听历史", null) { RoundIconButton(Icons.Filled.Refresh, "刷新", plain = true) {} }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(DemoData.episodes + DemoData.editorPicks.drop(6)) { e -> EpisodeRow(e, {}, {}, {}, playing = e.eid == playing.episode?.eid) }
-            }
-        } } }
-    }
-
-    @Test fun podcastEpisodesLight() {
-        paparazzi.unsafeUpdateConfig(config(night = false))
-        val pod = DemoData.podcasts.first()
-        val eps = DemoData.podcastEpisodes[pod.pid] ?: DemoData.episodes
-        shot { XyzCarTheme { Landscape(null) { Accented(pod.color) {
-            ScreenHeader(pod.title, {})
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Cover(pod.coverUrl, 140.dp, title = pod.title, color = pod.color)
-                Spacer(Modifier.width(24.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(pod.title, style = MaterialTheme.typography.titleLarge)
-                    Text(pod.author, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
-                    Text(pod.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) { items(eps) { e -> EpisodeRow(e, {}, {}, {}, playing = false) } }
-        } } } }
     }
 
     @Composable
     private fun Queue() {
         val q = DemoData.episodes.take(4)
-        ScreenHeader("播放队列", {}) { BigButton("清空", secondary = true) {} }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(Dims.gap)) {
+        ScreenHeader("播放列表", {}) { BigButton("清空", secondary = true) {} }
+        LazyColumn {
             items(q.size) { i -> QueueRow(q[i], i == 0, i == q.lastIndex, {}, {}, {}, {}, {}) }
         }
     }
 
     @Test fun queueLight() {
         paparazzi.unsafeUpdateConfig(config(night = false))
-        shot { XyzCarTheme { Landscape(null) { Queue() } } }
+        shot { XyzCarTheme(ThemeMode.Light) { Landscape(null) { Queue() } } }
     }
 
-    /** Test Lab 发现：130% 时标题被 4 个按钮挤成每行几个字 */
+    /** 放大到特大时排序按钮换到第二行，标题不被挤 */
     @Test fun queueLightScaled130() {
         paparazzi.unsafeUpdateConfig(config(night = false))
-        shot { XyzCarTheme { Scaled(1.3f) { Landscape(null) { Queue() } } } }
+        shot { XyzCarTheme(ThemeMode.Light) { Scaled(1.3f) { Landscape(null) { Queue() } } } }
     }
 }

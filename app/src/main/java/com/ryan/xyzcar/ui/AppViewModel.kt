@@ -19,20 +19,23 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import java.io.IOException
 
-enum class Tab(val label: String) { Discover("发现"), Subscriptions("订阅"), Search("搜索"), History("历史") }
+/** 和官方 App 一样的五个主入口：收听历史、设置在「我的」里 */
+enum class Tab(val label: String) { Discover("发现"), Recommend("推荐"), Subscriptions("订阅"), Search("搜索"), Me("我的") }
 
 sealed class Route(val key: String) {
     data class Home(val tab: Tab) : Route("tab:${tab.name}")
     data class PodcastDetail(val pid: String) : Route("pod:$pid")
     data class EpisodeDetail(val episode: Episode) : Route("ep:${episode.eid}")
     data class TopListRoute(val category: String, val title: String) : Route("top:$category")
-    data class CategoryRoute(val id: String, val name: String) : Route("cat:$id")
-    data object Categories : Route("cats")
     data object EditorPicks : Route("picks")
-    data object NewEpisodes : Route("pilot")
+    data object SubsShows : Route("subs-shows")
+    data object History : Route("history")
     data object Queue : Route("queue")
-    data object Settings : Route("settings")
+    data object Diagnostics : Route("diag")
 }
+
+/** 页面切换方向：决定转场动画往哪边滑 */
+enum class NavDir { Forward, Back, TabUp, TabDown }
 
 fun errorText(e: Throwable): String = when (e) {
     is AuthExpiredException -> e.message.orEmpty()
@@ -93,9 +96,19 @@ class PagedHolder<T>(
         fetch(reset = true)
     }
 
+    /**
+     * 加载下一页（滚动到底时自动调用）。上次失败后不再自动重试，要用户点「重试」（[retry]），
+     * 否则断网时滚动触发、筛选不够一屏触发都会变成一直发请求。
+     */
     fun loadMore() {
-        if (loading || end || !loadedOnce) return
+        if (loading || end || !loadedOnce || error != null) return
         fetch(reset = false)
+    }
+
+    /** 用户点「重试」：清掉错误再加载下一页 */
+    fun retry() {
+        error = null
+        loadMore()
     }
 
     fun ensureLoaded() { if (!loadedOnce && !loading) refresh() }
@@ -135,14 +148,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     fun bumpQueue() { queueVersion++ }
 
-    /** 界面缩放：实车屏幕密度未知，留一个手动调节 */
-    var uiScale by mutableStateOf(app.local.uiScale)
+    /** 显示大小（5 档，整体缩放）：实车屏幕密度未知，留一个手动调节 */
+    var sizeLevel by mutableStateOf(app.local.sizeLevel)
         private set
-    fun updateScale(scale: Float) { uiScale = scale; app.local.uiScale = scale }
+    val uiScale: Float get() = com.ryan.xyzcar.data.SIZE_SCALES[sizeLevel]
+    fun updateSize(level: Int) { sizeLevel = level; app.local.sizeLevel = level }
+
+    var themeMode by mutableStateOf(com.ryan.xyzcar.ui.theme.ThemeMode.of(app.local.themeMode))
+        private set
+    fun updateTheme(m: com.ryan.xyzcar.ui.theme.ThemeMode) { themeMode = m; app.local.themeMode = m.key }
+
+    /** 全屏播放页（盖在内容上，从底部滑出；不进路由栈，返回键先关它） */
+    var playerExpanded by mutableStateOf(false)
+
+    /** 「推荐」页的分类面板是否展开（「发现」页的「分类」入口会打开它） */
+    var categoriesOpen by mutableStateOf(false)
 
     val stack = mutableStateListOf<Route>(Route.Home(Tab.Subscriptions))
     val current: Route get() = stack.last()
     val currentTab: Tab get() = (stack.first() as? Route.Home)?.tab ?: Tab.Subscriptions
+    var navDir by mutableStateOf(NavDir.Forward)
+        private set
 
     /** 每个页面的状态按 route.key 保存：旋转屏幕、返回上一页都不重新加载 */
     private val holders = HashMap<String, Any>()
@@ -164,22 +190,39 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         holder(key) { PagedHolder(viewModelScope, ::onAuthExpired, id, loader) }
 
     fun selectTab(tab: Tab) {
-        // 离开的页面（非首页）状态可以丢弃，省内存
-        stack.drop(1).forEach { dropRouteHolders(it.key) }
+        if (stack.size == 1 && currentTab == tab) return
+        navDir = if (tab.ordinal >= currentTab.ordinal) NavDir.TabDown else NavDir.TabUp
+        val leaving = stack.drop(1).map { it.key }
         stack.clear()
         stack.add(Route.Home(tab))
+        dropLater(leaving)
     }
 
     fun push(route: Route) {
         if (stack.lastOrNull()?.key == route.key) return
+        navDir = NavDir.Forward
         stack.add(route)
     }
 
     fun back(): Boolean {
+        if (playerExpanded) { playerExpanded = false; return true }
         if (stack.size <= 1) return false
+        navDir = NavDir.Back
         val removed = stack.removeAt(stack.lastIndex)
-        if (stack.none { it.key == removed.key }) dropRouteHolders(removed.key)
+        dropLater(listOf(removed.key))
         return true
+    }
+
+    /**
+     * 离开的页面状态等退场动画播完再丢：动画期间旧页面还在重组，
+     * 立即丢弃会让它拿到一个空的新状态、闪一下骨架屏，还会多发一次请求。
+     */
+    private fun dropLater(keys: List<String>) {
+        if (keys.isEmpty()) return
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(1_000)
+            keys.filter { k -> stack.none { it.key == k } }.forEach { dropRouteHolders(it) }
+        }
     }
 
     fun onLoggedIn() {

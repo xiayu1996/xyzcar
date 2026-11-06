@@ -45,20 +45,18 @@ class Repository(
     fun logout() {
         tokens.clear()
         memCache.clear()
+        profileCache = null
     }
 
-    // ---------- 订阅（星标置顶） ----------
+    // ---------- 订阅（按最新单集排序，和官方一致） ----------
 
     data class SubscriptionPage(val items: List<Podcast>, val loadMoreKey: JsonElement?, val fromDisk: Boolean = false)
 
     suspend fun subscriptionsFirstPage(force: Boolean): SubscriptionPage = if (demo) SubscriptionPage(DemoData.podcasts, null) else try {
         cached("subs", force) {
-            val starred = runCatching { api.starredSubscriptions() }.getOrDefault(emptyList())
             val page = api.subscriptions(null)
-            val starredIds = starred.map { it.pid }.toSet()
-            val merged = starred + page.items.filter { it.pid !in starredIds }
-            local.putCache("subs", json.encodeToString(ListSerializer(Podcast.serializer()), merged))
-            SubscriptionPage(merged, page.loadMoreKey)
+            local.putCache("subs", json.encodeToString(ListSerializer(Podcast.serializer()), page.items))
+            SubscriptionPage(page.items, page.loadMoreKey)
         }
     } catch (e: Exception) {
         if (e is com.ryan.xyzcar.data.api.AuthExpiredException) throw e
@@ -143,6 +141,22 @@ class Repository(
         runCatching { api.updateProgress(pending) }.onSuccess { local.pendingProgress = emptyList() }
     }
 
+    // ---------- 订阅更新 ----------
+
+    /** 订阅更新 + 服务端进度（用来区分未听 / 在听 / 已听完） */
+    suspend fun inbox(key: JsonElement?, force: Boolean = false): Page<Episode> {
+        if (demo) return Page(DemoData.allEpisodes().take(12), null)
+        val page = if (key == null) cached("inbox", force) { api.inbox(null) } else api.inbox(key)
+        return Page(withProgress(page.items), page.loadMoreKey)
+    }
+
+    // ---------- 账号 ----------
+
+    @Volatile private var profileCache: User? = null
+
+    /** 昵称和头像：每次启动只请求一次 */
+    suspend fun profile(): User = profileCache ?: (if (demo) User("demo", "演示账号") else api.profile()).also { profileCache = it }
+
     // ---------- 历史 ----------
 
     suspend fun history(key: JsonElement?): Page<Episode> {
@@ -171,6 +185,18 @@ class Repository(
     suspend fun editorPicks(key: JsonElement?): Page<Episode> = if (demo) Page(DemoData.editorPicks, null) else api.editorPicks(key)
     suspend fun newEpisodes(): List<Episode> = if (demo) DemoData.episodes else cached("pilot", false) { api.newEpisodesSquare() }
     suspend fun categories(): List<Category> = if (demo) DemoData.categories else cached("cats", false) { api.categories() }
+    /** 「推荐」页的「综合」：发现页的「为你推荐」 */
+    suspend fun recommend(force: Boolean): List<Episode> =
+        discovery(force).firstOrNull { it.episodes.isNotEmpty() }?.episodes.orEmpty()
+
+    /** 「换一批」：只在用户点按钮时调用 */
+    suspend fun refreshRecommend(): List<Episode> = if (demo) DemoData.allEpisodes().shuffled().take(3) else api.refreshRecommend()
+
+    /** 某个分类下的推荐单集（RECOMMEND 为你推荐 / HOT 近期热门） */
+    suspend fun categoryEpisodes(id: String, tab: String, force: Boolean = false): List<Episode> =
+        if (demo) DemoData.allEpisodes().let { all -> all.drop(id.hashCode().mod(maxOf(1, all.size - 6))).take(8) }
+        else cached("catEps:$id:$tab", force) { api.categoryEpisodes(id, tab) }
+
     suspend fun categoryTabs(id: String): List<Category> =
         if (demo) listOf(Category("hot", "热门"), Category("new", "最新")) else cached("cattabs:$id", false) { api.categoryTabs(id) }
     suspend fun categoryPodcasts(id: String, tab: String, key: JsonElement?): Page<Podcast> =
@@ -178,16 +204,18 @@ class Repository(
 
     // ---------- 搜索 ----------
 
-    suspend fun search(keyword: String): SearchResult {
-        local.recentSearches = (listOf(keyword) + local.recentSearches.filter { it != keyword })
-        if (demo) return SearchResult(
-            DemoData.podcasts.filter { keyword in it.title }.ifEmpty { DemoData.podcasts.take(2) },
-            DemoData.allEpisodes().filter { keyword in it.title || keyword in it.podcastTitle }.ifEmpty { DemoData.episodes },
-        )
-        val (all, _) = api.search(keyword, "ALL")
-        // ALL 只返回少量单集，再单独搜一次单集
-        val eps = runCatching { api.search(keyword, "EPISODE").first.episodes }.getOrDefault(emptyList())
-        return SearchResult(all.podcasts, (all.episodes + eps).distinctBy { it.eid })
+    /**
+     * 搜索。type：ALL 综合（少量节目 + 单集，一页）/ PODCAST 节目 / EPISODE 单集（可翻页）。
+     * 2026-11 实测服务端排序和官方 App 一致，这里不再自己合并、重排。
+     */
+    suspend fun search(keyword: String, type: String = "ALL", key: JsonElement? = null): Pair<SearchResult, JsonElement?> {
+        if (key == null && type == "ALL") local.recentSearches = (listOf(keyword) + local.recentSearches.filter { it != keyword })
+        if (demo) {
+            val pods = DemoData.podcasts.filter { keyword in it.title }.ifEmpty { DemoData.podcasts.take(2) }
+            val eps = DemoData.allEpisodes().filter { keyword in it.title || keyword in it.podcastTitle }.ifEmpty { DemoData.episodes }
+            return SearchResult(if (type == "EPISODE") emptyList() else pods, if (type == "PODCAST") emptyList() else eps, listOf(keyword)) to null
+        }
+        return api.search(keyword, type, key)
     }
 
     suspend fun searchPresets(): List<String> = if (demo) DemoData.searchPresets else cached("presets", false) { api.searchPresets() }

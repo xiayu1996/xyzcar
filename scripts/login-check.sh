@@ -4,6 +4,7 @@
 #   ./scripts/login-check.sh check    用已保存的登录态再验证一次（不用扫码）
 #   ./scripts/login-check.sh show     只读：列出为你推荐 / 编辑精选 / 三个榜单的前几条
 #   ./scripts/login-check.sh dump     只读：导出公开内容快照（debug 演示模式和界面截图用）
+#   XYZ_PROBE=请求列表文件 ./scripts/login-check.sh probe   只读：逐个发请求，原始返回存 .logincheck/probe/
 #   可选：XYZ_APP_VERSION / XYZ_APP_BUILD 临时覆盖伪装的 App 版本号
 # token 不会打印；token 保存在 .logincheck/（已 gitignore，权限 600）。
 cd "$(dirname "$0")/.." || exit 1
@@ -18,9 +19,11 @@ run_step() {
   return $rc
 }
 
-if [ "$1" = "check" ] || [ "$1" = "show" ] || [ "$1" = "dump" ]; then
-  run_step "$1"; exit $?
-fi
+case "$1" in
+  check|show|dump|probe) run_step "$1"; exit $? ;;
+  "") ;;
+  *) echo "[登录验证] ❌ 不认识的参数：$1（可用：check / show / dump / probe；不带参数是扫码登录）"; exit 2 ;;
+esac
 
 # 扫码登录：终端里会显示二维码，同时打开一张二维码图片；用手机小宇宙 App 扫码并确认
 run_step qr

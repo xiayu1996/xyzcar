@@ -39,8 +39,13 @@ data class Episode(
     val progressSec: Int = 0,
     /** 所属节目的主题色 */
     val color: ThemeColor? = null,
+    /** 付费单集（payType 不是 FREE），第三方客户端拿不到音频 */
+    val paid: Boolean = false,
+    /** 服务端标记已听完 */
+    val finished: Boolean = false,
 )
 
+/** 当前账号：只取昵称和头像（接口还返回手机号等，一律不解析、不保存） */
 @Serializable
 data class User(
     val uid: String,
@@ -59,9 +64,11 @@ data class DiscoverySection(
     val episodes: List<Episode> = emptyList(),
 )
 
+/** iconUrl：接口给的分类图标（运行时加载，不打包进 App） */
 @Serializable
-data class Category(val id: String, val name: String)
+data class Category(val id: String, val name: String, val iconUrl: String = "")
 
 data class TopList(val title: String, val category: String, val episodes: List<Episode>, val podcasts: List<Podcast>)
 
-data class SearchResult(val podcasts: List<Podcast>, val episodes: List<Episode>)
+/** highlight：服务端给的高亮词 */
+data class SearchResult(val podcasts: List<Podcast>, val episodes: List<Episode>, val highlight: List<String> = emptyList())

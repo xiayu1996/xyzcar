@@ -10,6 +10,7 @@ import com.ryan.xyzcar.data.SearchResult
 import com.ryan.xyzcar.data.AuthTokens
 import com.ryan.xyzcar.data.ThemeColor
 import com.ryan.xyzcar.data.TopList
+import com.ryan.xyzcar.data.User
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -288,9 +289,10 @@ class XyzApi(
 
     // ---------- 订阅 ----------
 
-    suspend fun subscriptions(loadMoreKey: JsonElement? = null): Page<Podcast> {
+    /** 订阅列表。sortBy=latestEpisodePubDate：按最新单集时间倒序（2026-11 实测可用，和官方「我的订阅」默认排序一致） */
+    suspend fun subscriptions(loadMoreKey: JsonElement? = null, sortBy: String = "latestEpisodePubDate"): Page<Podcast> {
         val body = buildJsonObject {
-            put("limit", "20"); put("sortOrder", "desc"); put("sortBy", "subscribedAt")
+            put("limit", "20"); put("sortOrder", "desc"); put("sortBy", sortBy)
             if (loadMoreKey != null && loadMoreKey !is JsonNull) put("loadMoreKey", loadMoreKey)
         }
         val r = exec(Call("POST", "/v1/subscription/list", body))
@@ -361,6 +363,20 @@ class XyzApi(
         exec(Call("POST", "/v1/playback-progress/update", body))
     }
 
+    // ---------- 订阅更新（官方「订阅 → 更新」） ----------
+
+    /** 订阅节目的新单集，按发布时间倒序；单集带 isPlayed / isFinished。loadMoreKey 是 {pubDate, id} */
+    suspend fun inbox(loadMoreKey: JsonElement? = null): Page<Episode> {
+        val body = buildJsonObject { put("limit", "20"); if (loadMoreKey != null && loadMoreKey !is JsonNull) put("loadMoreKey", loadMoreKey) }
+        val r = exec(Call("POST", "/v1/inbox/list", body))
+        return Page(r.arr("data").mapObj { parseEpisode(it) }, r["loadMoreKey"].nonNull())
+    }
+
+    // ---------- 账号 ----------
+
+    /** 当前账号的昵称和头像。返回里还有手机号等字段，这里只取需要的三项 */
+    suspend fun profile(): User = XyzParser.parseUser(exec(Call("GET", "/v1/profile/get")).obj("data"))
+
     // ---------- 收听历史 ----------
 
     suspend fun history(loadMoreKey: JsonElement? = null): Page<Episode> {
@@ -382,6 +398,9 @@ class XyzApi(
     /** 诊断用：只描述发现页返回的结构（类型、字段名），不含内容 */
     suspend fun discoveryShape(loadMoreKey: String? = null): String = shapeOf(exec(Call("POST", "/v1/discovery-feed/list",
         buildJsonObject { put("returnAll", "false"); if (loadMoreKey != null) put("loadMoreKey", loadMoreKey) })))
+
+    /** 诊断用（只给登录验证工具的 probe 步骤用）：发任意只读请求，返回原始 JSON */
+    suspend fun rawForProbe(method: String, path: String, body: JsonObject?): JsonObject = exec(Call(method, path, body))
 
     /** 诊断用：新节目广场的返回结构 */
     suspend fun newEpisodesSquareShape(): String =
@@ -430,8 +449,26 @@ class XyzApi(
         return r.arr("data").mapObj { it.obj("episode")?.let { e -> parseEpisode(e) } }.filterNotNull()
     }
 
-    suspend fun categories(): List<Category> =
-        exec(Call("POST", "/v1/category/list-all", abtest = null)).arr("data").mapObj { Category(it.str("id"), it.str("emoji") + " " + it.str("name")) }
+    suspend fun categories(): List<Category> = XyzParser.parseCategories(exec(Call("POST", "/v1/category/list-all", abtest = null)))
+
+    /**
+     * 分类下的推荐单集（官方「推荐」页按分类切换的卡片）。tab：RECOMMEND 为你推荐 / HOT 近期热门 / ALL 全部。
+     * 2026-11 实测每个 item 是 {podcast, episode}，一次 10 条，没有 loadMoreKey。
+     */
+    suspend fun categoryEpisodes(categoryId: String, tab: String = "RECOMMEND"): List<Episode> {
+        val body = buildJsonObject { put("categoryId", categoryId); put("tab", tab); put("omitSubscribed", false) }
+        return XyzParser.parseCategoryEpisodes(exec(Call("POST", "/v1/category/podcast/list-by-tab", body, abtest = null)))
+    }
+
+    /** 「为你推荐」换一批：每次返回 3 集新的推荐（只在用户点「换一批」时调用） */
+    suspend fun refreshRecommend(): List<Episode> {
+        val r = exec(Call("POST", "/v1/discovery-collection/refresh-episode-recommend"))
+        return when (val d = r["data"]) {
+            is JsonObject -> XyzParser.parseModule(d)?.episodes.orEmpty()
+            is JsonArray -> d.mapObj { XyzParser.parseModule(it) }.flatMap { it.episodes }
+            else -> emptyList()
+        }
+    }
 
     suspend fun categoryTabs(categoryId: String): List<Category> =
         exec(Call("POST", "/v1/category/podcast/list-tabs", buildJsonObject { put("categoryId", categoryId) }, abtest = null))
@@ -455,16 +492,7 @@ class XyzApi(
             if (loadMoreKey != null && loadMoreKey !is JsonNull) put("loadMoreKey", loadMoreKey)
         }
         val r = exec(Call("POST", "/v1/search/create", body))
-        val pods = mutableListOf<Podcast>()
-        val eps = mutableListOf<Episode>()
-        r.arr("data").forEach { item ->
-            val o = item as? JsonObject ?: return@forEach
-            when (o.str("type")) {
-                "PODCAST" -> pods += parsePodcast(o)
-                "EPISODE" -> eps += parseEpisode(o)
-            }
-        }
-        return SearchResult(pods, eps) to r["loadMoreKey"].nonNull()
+        return XyzParser.parseSearch(r) to r["loadMoreKey"].nonNull()
     }
 
     suspend fun searchPresets(): List<String> =
@@ -528,7 +556,7 @@ object XyzParser {
         return sections
     }
 
-    private fun parseModule(m: JsonObject): DiscoverySection? {
+    fun parseModule(m: JsonObject): DiscoverySection? {
         val title = m.str("title").ifEmpty { return null }
         val targets = m.arr("target")
         val eps = targets.mapObj { t -> t.obj("episode")?.let { parseEpisode(it) } }.filterNotNull()
@@ -536,6 +564,48 @@ object XyzParser {
         if (eps.isEmpty() && pods.isEmpty()) return null
         return DiscoverySection(title, podcasts = pods, episodes = eps)
     }
+
+    /** 搜索结果：data 里混着 HEADER / PODCAST / EPISODE；highlightWord.words 是要高亮的词 */
+    fun parseSearch(r: JsonObject): SearchResult {
+        val pods = mutableListOf<Podcast>()
+        val eps = mutableListOf<Episode>()
+        r.arr("data").forEach { item ->
+            val o = item as? JsonObject ?: return@forEach
+            when (o.str("type")) {
+                "PODCAST" -> pods += parsePodcast(o)
+                "EPISODE" -> eps += parseEpisode(o)
+            }
+        }
+        val words = r.obj("highlightWord").arr("words").mapNotNull { (it as? JsonPrimitive)?.content?.takeIf { w -> w.isNotBlank() } }
+        return SearchResult(pods, eps, words)
+    }
+
+    fun parseCategories(r: JsonObject): List<Category> =
+        r.arr("data").mapObj { c ->
+            val icon = c.obj("icon")
+            Category(c.str("id"), c.str("name"), icon.str("smallPicUrl").ifEmpty { icon.str("picUrl") })
+        }.filter { it.id.isNotEmpty() && it.name.isNotEmpty() }
+
+    /** 分类推荐：每项 {podcast, episode}；单集里没有节目信息时用外层 podcast 补齐 */
+    fun parseCategoryEpisodes(r: JsonObject): List<Episode> =
+        r.arr("data").mapObj { item ->
+            val e = item.obj("episode") ?: return@mapObj null
+            val pod = item.obj("podcast")
+            val ep = parseEpisode(e)
+            val p = pod?.let { parsePodcast(it) }
+            ep.copy(
+                pid = ep.pid.ifEmpty { p?.pid.orEmpty() },
+                podcastTitle = ep.podcastTitle.ifEmpty { p?.title.orEmpty() },
+                coverUrl = ep.coverUrl.ifEmpty { p?.coverUrl.orEmpty() },
+                color = ep.color ?: p?.color,
+            )
+        }.filter { it.eid.isNotEmpty() }
+
+    fun parseUser(o: JsonObject?): User = User(
+        uid = o.str("uid"),
+        nickname = o.str("nickname"),
+        avatarUrl = o.obj("avatar").obj("picture").let { it.str("middlePicUrl").ifEmpty { it.str("picUrl") } },
+    )
 
     fun parsePodcast(o: JsonObject): Podcast {
         val img = o.obj("image")
@@ -578,6 +648,8 @@ object XyzParser {
             coverUrl = img.str("middlePicUrl").ifEmpty { img.str("picUrl") },
             playCount = o.int("playCount"),
             color = parseColor(pod) ?: parseColor(o),
+            paid = o.str("payType").let { it.isNotEmpty() && it != "FREE" },
+            finished = o.bool("isFinished"),
         )
     }
 
