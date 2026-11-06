@@ -291,3 +291,12 @@
 - [x] README 精简为中文：功能、安装、使用、致谢、许可；开发内容移到 `docs/development.md`
 - [x] 提交规范：`.claude/rules/git-commit.md`、`.githooks/commit-msg`、`.claude/hooks/git-commit-guard.sh`、`.claude/settings.json`；本仓库已设 `core.hooksPath=.githooks`
 - [ ] 待用户：配置 4 个签名 Secrets 后推送并打 `v0.0.2` 标签
+
+## 2026-11-06 记录 022 · GitHub topics；命令行跑 Test Lab
+
+- [x] 仓库 topics：android、kotlin、jetpack-compose、media3、podcast、podcast-player、xiaoyuzhou、xiaoyuzhoufm、byd、dilink
+- [x] 调研：Firebase 官方 agent skills 没有测试相关；官方 MCP 的 `apptesting`（AI 自然语言测试）是 alpha，需要注册应用 + App Distribution，暂不用；改用 gcloud CLI
+- [x] `scripts/testlab.sh`：上传调试包 → MediumTablet API 32 横 + 竖 Robo 5 分钟 → 下载截图 / logcat / 录屏到 `.testlab/`
+- [x] 首次命令行运行（matrix-32xwzarrml715，0.0.2 调试包）：两台均通过；logcat 无本应用崩溃 / ANR / 异常；横屏 45、竖屏 43 张截图覆盖发现、推荐（含全部分类面板）、更新、我的订阅、搜索、单集 / 节目详情、榜单、编辑精选、收听历史、播放列表、全屏播放页、我的（含深色切换），未见布局错位
+- [ ] 小问题：「已加入播放列表」提示条会盖住列表项和迷你播放条几秒
+- [ ] Firebase Test Lab 将于 2027-09-30 停止服务，届时迁到 Google Cloud Developer Device Platform

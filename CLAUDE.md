@@ -27,7 +27,7 @@
 2. 主动或定时刷新 token；只在 401 时刷新，间隔 ≥ 60 秒，不重放旧 refresh token。
 3. 打印或保存 token、手机号、验证码；绕过人机验证。
 4. 提交 `signing/`、`.logincheck/`、`local.properties`、`dist/`、`app/src/debug/assets/demo_snapshot.json`。
-5. 本地跑模拟器；云端验证用 Firebase Test Lab，由用户上传。
+5. 本地跑模拟器；云端验证用 `scripts/testlab.sh`（免费额度每天 10 次，一次占 2 次）。
 6. 复制参考项目代码（BYDMate 等），只借鉴思路。
 7. 未经要求 commit / push / 打 tag；替用户设置仓库 Secrets。
 
@@ -38,4 +38,5 @@
 ./gradlew testDebugUnitTest
 ./gradlew recordPaparazziDebug       # 截图 → docs/screenshots/
 ./scripts/login-check.sh check       # 会刷新一次 token，勿频繁跑
+./scripts/testlab.sh                 # Test Lab Robo，横竖各一台，结果在 .testlab/
 ```

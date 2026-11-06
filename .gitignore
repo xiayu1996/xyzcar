@@ -13,3 +13,4 @@ app/src/test/resources/covers/
 dist/
 # 用账号拉的内容快照（含个性化推荐和第三方 shownotes），本地用 login-check.sh dump 生成
 app/src/debug/assets/demo_snapshot.json
+.testlab/

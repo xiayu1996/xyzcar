@@ -67,18 +67,25 @@ release 包没有演示模式，自动测试只会停在登录页。
 
 调试包的演示模式内置一份真实公开内容快照（发现页、榜单、编辑精选、节目、单集），封面和音频地址都是真的，所以在 Test Lab 上能看到真实封面，点播放也能真的播放。订阅和历史列表是用公开节目编的，不含任何账号数据和 token。
 
-## 命令行方式（可选）
+## 命令行方式（推荐）
 
-装好 gcloud 并登录后，可以用命令行跑：
+一次性准备：
 
 ```bash
-gcloud config set project <你的项目ID>
-gcloud firebase test android models list          # 查可用机型 ID
-gcloud firebase test android run --type robo \
-  --app dist/xyzcar-0.0.1-debug.apk \
-  --device model=<平板机型ID>,version=34,orientation=landscape,locale=zh_CN \
-  --device model=<平板机型ID>,version=34,orientation=portrait,locale=zh_CN \
-  --timeout 5m
+brew install --cask gcloud-cli
+gcloud auth login
+gcloud config set project xyzcar-test
+# macOS 会拦截未公证的 gcloud-crc32c，改用整文件下载 + MD5 校验
+gcloud config set storage/use_gcloud_crc32c False
+gcloud config set storage/sliced_object_download_threshold 0
 ```
 
-注意：命令行方式要求项目开启 Cloud Testing API，一般第一次运行时会提示开启。
+每次运行：
+
+```bash
+./scripts/testlab.sh                 # 默认 dist/xyzcar-<版本>-debug.apk
+./scripts/testlab.sh path/to.apk     # 指定包
+```
+
+- 设备：`MediumTablet.arm` API 32，中文，横 + 竖（占 2 次额度）；可用 `TESTLAB_MODEL` / `TESTLAB_API` 覆盖
+- 结果下载到 `.testlab/<时间>/`（已 gitignore）：每台设备的截图、`logcat`、录屏、`sitemap.png`
