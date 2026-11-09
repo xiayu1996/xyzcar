@@ -366,3 +366,12 @@
 - [ ] 未提交、未打 tag
 - [x] Test Lab（matrix-6174286814908771098，横屏 1 次）：通过，无崩溃；分屏标记读回 `1（Integer）`；Android 12 模拟器上 `IActivityTaskManager$Stub` 的 TRANSACTION_* 字段一个都读不到（隐藏接口限制），`getDefaultTransactionName` 被 lint 判为 targetSdk 35 禁止反射，已去掉；系统事务路线基本走不通，分屏改靠 meta-data，实验开关再试 UnionActivityManager 的同名方法（车上才有这个类）
 - [ ] 未在设备上点过：三个实验开关、导出二维码弹窗（Robo 没点到；切片逻辑有单元测试）
+
+## 2026-11-09 记录 027 · 发布 v0.0.4
+
+- [x] 5 个提交推送 main，打 tag v0.0.4；CI 前 3 次在 Runner 上下载 Gradle 超时 / 504（wrapper `networkTimeout=10000`），第 4 次重跑成功
+- [x] GitHub Release v0.0.4：`xyzcar-0.0.4.apk` + `.sha256`，签名校验通过；更新说明为 3 条 feat
+- [x] Gitee：README-only 同步成功、发行版和两个附件已上传，SHA-256 与 GitHub 一致、latest = v0.0.4；但 gitee job 在最后打印列表时撞到 15 分钟上限被标记为 cancelled（上传慢）
+- [ ] 待改：`gradle-wrapper.properties` 的 `networkTimeout` 调到 120000；gitee job `timeout-minutes` 调大
+- [ ] 待实车：0.0.3 → 0.0.4 应用内更新；记录 026 的各项实车验证
+- [x] 已改：wrapper `networkTimeout` 10000 → 120000；gitee job `timeout-minutes` 15 → 40
