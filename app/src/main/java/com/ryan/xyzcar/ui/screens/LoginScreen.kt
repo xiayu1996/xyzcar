@@ -110,7 +110,7 @@ fun LoginContent(qr: LoginQr?, state: QrState, error: String?, onRefresh: () -> 
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.widthIn(min = 280.dp, max = 460.dp).align(Alignment.CenterVertically),
             ) {
-                Text("小宇宙车机版", style = MaterialTheme.typography.headlineLarge)
+                Text(androidx.compose.ui.res.stringResource(com.ryan.xyzcar.R.string.app_name), style = MaterialTheme.typography.headlineLarge)
                 Text(
                     when (state) {
                         QrState.WAITING -> "打开手机上的小宇宙 App，扫描左侧二维码登录"
