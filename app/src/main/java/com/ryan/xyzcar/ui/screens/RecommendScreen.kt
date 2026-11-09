@@ -298,19 +298,19 @@ internal fun RecommendCard(ep: Episode, playing: Boolean, onOpen: () -> Unit, on
             .fillMaxWidth()
             .card(RoundedCornerShape(24.dp), bg, x.shadow, null, 10.dp)
             .pressable(pressedScale = 0.98f) { onOpen() }
-            .padding(22.dp),
+            .padding(18.dp),
     ) {
         Row {
-            Column(Modifier.weight(1f).heightIn(min = 140.dp)) {
+            Column(Modifier.weight(1f).heightIn(min = 112.dp)) {
                 Text(ep.title, style = MaterialTheme.typography.titleLarge, color = x.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(6.dp))
                 val desc = ep.description.replace(Regex("""\[[^\]]*\.(png|jpe?g|gif|webp)]""", RegexOption.IGNORE_CASE), "").replace(Regex("\\s+"), " ").trim()
                 if (desc.isNotEmpty()) Text(desc, style = MaterialTheme.typography.bodyMedium, color = x.sub, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.width(18.dp))
-            Cover(ep.coverUrl, 140.dp, title = ep.podcastTitle, color = ep.color, radius = 16.dp)
+            Cover(ep.coverUrl, 112.dp, title = ep.podcastTitle, color = ep.color, radius = 16.dp)
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(ep.podcastTitle, style = MaterialTheme.typography.bodyMedium, color = x.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             if (ep.playCount > 0) {

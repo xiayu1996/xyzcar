@@ -45,6 +45,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -55,6 +56,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -111,8 +114,9 @@ fun MainLayout(vm: AppViewModel) {
             cycleSleep = vm.player::cycleSleep,
         )
     }
-    // 旋转、分屏改变宽度时内容区整体搬家，不丢状态、不重放转场
-    val content = remember { movableContentOf { ContentArea(vm) } }
+    // 旋转、分屏改变宽度时内容区整体搬家，不丢状态、不重放转场。
+    // 「显示大小」只缩放内容区；导航和播放条保持车机触控尺寸
+    val content = remember { movableContentOf { ContentScale(vm.uiScale) { ContentArea(vm) } } }
 
     val contentWithSnackbar = @Composable { m: Modifier ->
         Box(m) {
@@ -157,6 +161,14 @@ fun MainLayout(vm: AppViewModel) {
             FullPlayer(ps, left, actions)
         }
     }
+}
+
+/** 内容区缩放：换算 density，文字、封面、间距一起变，切换档位时平滑过渡 */
+@Composable
+fun ContentScale(scale: Float, content: @Composable () -> Unit) {
+    val s by androidx.compose.animation.core.animateFloatAsState(scale, tween(300), label = "contentScale")
+    val base = LocalDensity.current
+    CompositionLocalProvider(LocalDensity provides Density(base.density * s, base.fontScale), content = content)
 }
 
 /** 导航项：选中是强调色图标 + 浅青底，颜色切换有渐变 */
@@ -206,6 +218,6 @@ fun NavRail(selected: Tab?, onTab: (Tab) -> Unit) {
 @Composable
 fun BottomNav(selected: Tab?, onTab: (Tab) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        Tab.entries.forEach { t -> NavItem(t, selected == t, Modifier.weight(1f), 88.dp, true) { onTab(t) } }
+        Tab.entries.forEach { t -> NavItem(t, selected == t, Modifier.weight(1f), 76.dp, true) { onTab(t) } }
     }
 }

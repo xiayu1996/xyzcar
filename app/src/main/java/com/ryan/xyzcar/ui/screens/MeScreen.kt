@@ -261,7 +261,7 @@ private fun SettingsColumn(vm: AppViewModel) {
         }
     }
     Text("显示大小", style = MaterialTheme.typography.titleLarge, color = x.text, modifier = Modifier.padding(top = 36.dp, bottom = 6.dp))
-    Text("文字和按钮一起缩放，车上看着偏大或偏小时调整", style = MaterialTheme.typography.bodyMedium, color = x.sub)
+    Text("调整内容区的文字和封面大小，左侧导航和播放条保持不变", style = MaterialTheme.typography.bodyMedium, color = x.sub)
     TickSlider(vm.sizeLevel, SIZE_LABELS, vm::updateSize)
     Text(
         "示例：vol.275 桃酥辣条干脆面",

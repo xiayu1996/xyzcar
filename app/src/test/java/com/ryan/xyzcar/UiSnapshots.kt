@@ -45,7 +45,10 @@ import com.android.resources.ScreenOrientation
 import com.ryan.xyzcar.data.DemoData
 import com.ryan.xyzcar.data.Episode
 import com.ryan.xyzcar.player.PlayerUi
+import com.ryan.xyzcar.data.SIZE_DEFAULT
+import com.ryan.xyzcar.data.SIZE_SCALES
 import com.ryan.xyzcar.ui.BottomNav
+import com.ryan.xyzcar.ui.ContentScale
 import com.ryan.xyzcar.ui.NavRail
 import com.ryan.xyzcar.ui.Tab
 import com.ryan.xyzcar.ui.components.BigButton
@@ -125,27 +128,21 @@ class UiSnapshots {
         episode = DemoData.episodes.getOrElse(1) { DemoData.episodes.first() }, isPlaying = true, positionMs = 754_000, durationMs = 4_200_000, speed = 1.25f, connected = true,
     )
 
-    /** 截图用的车机横屏：1920×1080 @ 240dpi = 1280×720dp（和原型画板一样大） */
+    /** 截图用的车机横屏：1920×900 @ 240dpi = 1280×600dp（海豹 08 实车「车机信息」里的窗口大小） */
     private fun config(night: Boolean, portrait: Boolean = false, widthPx: Int = 1920) = DeviceConfig.PIXEL_C.copy(
-        screenWidth = if (portrait) 1080 else widthPx, screenHeight = if (portrait) 1920 else 1080, xdpi = 240, ydpi = 240,
+        screenWidth = if (portrait) 1080 else widthPx, screenHeight = if (portrait) 1920 else 900, xdpi = 240, ydpi = 240,
         density = ResDensity.HIGH, softButtons = false,
         orientation = if (portrait) ScreenOrientation.PORTRAIT else ScreenOrientation.LANDSCAPE,
         nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT,
     )
 
+    /** 和 App 一样的外框：左侧导航 | 内容（按「显示大小」缩放）+ 迷你播放条 */
     @Composable
-    private fun Scaled(scale: Float, content: @Composable () -> Unit) {
-        val d = LocalDensity.current
-        CompositionLocalProvider(LocalDensity provides Density(d.density * scale, d.fontScale), content = content)
-    }
-
-    /** 和 App 一样的外框：左侧导航 | 内容 + 迷你播放条 */
-    @Composable
-    private fun Landscape(tab: Tab?, content: @Composable () -> Unit) = androidx.compose.material3.Surface(color = Xyz.bg, contentColor = Xyz.text) {
+    private fun Landscape(tab: Tab?, scale: Float = SIZE_SCALES[SIZE_DEFAULT], content: @Composable () -> Unit) = androidx.compose.material3.Surface(color = Xyz.bg, contentColor = Xyz.text) {
         Row(Modifier.fillMaxSize().background(Xyz.bg)) {
             NavRail(tab) {}
             Column(Modifier.weight(1f).fillMaxHeight().padding(end = 24.dp, bottom = 16.dp)) {
-                Column(Modifier.weight(1f).fillMaxWidth().padding(start = 8.dp, top = 12.dp)) { content() }
+                Column(Modifier.weight(1f).fillMaxWidth().padding(start = 8.dp, top = 12.dp)) { ContentScale(scale) { Column { content() } } }
                 Spacer(Modifier.height(12.dp))
                 MiniPlayer(playing, 3, noop)
             }
@@ -227,9 +224,9 @@ class UiSnapshots {
         shot { XyzCarTheme(ThemeMode.Light) { Landscape(Tab.Subscriptions) { Updates() } } }
     }
 
-    @Test fun updatesDarkScaled130() {
+    @Test fun updatesDarkLargest() {
         paparazzi.unsafeUpdateConfig(config(night = true))
-        shot { XyzCarTheme(ThemeMode.Dark) { Scaled(1.3f) { Landscape(Tab.Subscriptions) { Updates() } } } }
+        shot { XyzCarTheme(ThemeMode.Dark) { Landscape(Tab.Subscriptions, SIZE_SCALES.last()) { Updates() } } }
     }
 
     @Test fun searchResultsLight() {
@@ -292,11 +289,11 @@ class UiSnapshots {
         paparazzi.unsafeUpdateConfig(config(night = false, widthPx = 630))
         shot { XyzCarTheme(ThemeMode.Light) { androidx.compose.material3.Surface(color = Xyz.bg) {
             Column(Modifier.fillMaxSize()) {
-                Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+                Column(Modifier.weight(1f).padding(horizontal = 16.dp)) { ContentScale(SIZE_SCALES[SIZE_DEFAULT]) { Column {
                     ScreenHeader("发现", null) { RoundIconButton(Icons.Filled.Search, "搜索") {} }
                     SectionTitle("为你推荐")
-                    eps.take(4).forEach { EpisodeRow(it, {}, {}) }
-                }
+                    eps.take(5).forEach { EpisodeRow(it, {}, {}) }
+                } } }
                 MiniPlayer(playing, 3, noop, Modifier.padding(horizontal = 12.dp))
                 BottomNav(Tab.Discover) {}
             }
@@ -334,8 +331,8 @@ class UiSnapshots {
     }
 
     /** 放大到特大时排序按钮换到第二行，标题不被挤 */
-    @Test fun queueLightScaled130() {
+    @Test fun queueLightLargest() {
         paparazzi.unsafeUpdateConfig(config(night = false))
-        shot { XyzCarTheme(ThemeMode.Light) { Scaled(1.3f) { Landscape(null) { Queue() } } } }
+        shot { XyzCarTheme(ThemeMode.Light) { Landscape(null, SIZE_SCALES.last()) { Queue() } } }
     }
 }

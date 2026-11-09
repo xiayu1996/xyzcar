@@ -33,7 +33,7 @@ object Dims {
     val cover = 96.dp
     val radius = 16.dp
     val railWidth = 112.dp
-    val miniPlayer = 96.dp
+    val miniPlayer = 84.dp
     /** 窄于这个宽度用底部导航（分屏 1/3 等） */
     val narrow = 600.dp
     /** 宽于这个宽度用两栏 / 横向分页 */

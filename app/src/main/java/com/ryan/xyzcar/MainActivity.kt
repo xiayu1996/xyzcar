@@ -6,9 +6,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Density
 import androidx.activity.viewModels
 import com.ryan.xyzcar.ui.AppViewModel
 import com.ryan.xyzcar.ui.MainLayout
@@ -36,15 +33,12 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             XyzCarTheme(vm.themeMode) {
-                val base = LocalDensity.current
-                CompositionLocalProvider(LocalDensity provides Density(base.density * vm.uiScale, base.fontScale)) {
-                    // 根节点用 Surface，保证深色模式下默认文字是浅色
-                    androidx.compose.material3.Surface(
-                        color = androidx.compose.material3.MaterialTheme.colorScheme.background,
-                        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
-                    ) {
-                        if (vm.loggedIn) MainLayout(vm) else LoginScreen(vm)
-                    }
+                // 根节点用 Surface，保证深色模式下默认文字是浅色
+                androidx.compose.material3.Surface(
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.background,
+                    contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
+                ) {
+                    if (vm.loggedIn) MainLayout(vm) else LoginScreen(vm)
                 }
             }
         }

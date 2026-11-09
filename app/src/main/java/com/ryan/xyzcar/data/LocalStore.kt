@@ -12,9 +12,16 @@ data class LastPlayed(val episode: Episode, val positionMs: Long, val speed: Flo
 @Serializable
 data class PendingProgress(val eid: String, val pid: String, val progressSec: Int, val playedAt: String)
 
-/** 显示大小每一档的整体缩放 */
-val SIZE_SCALES = listOf(0.8f, 0.9f, 1.0f, 1.15f, 1.3f)
+/**
+ * 显示大小每一档对内容区的缩放（左侧导航、迷你播放条、全屏播放页不跟着缩放）。
+ * 0.0.4 起「标准」= 以前的「较小」：车机实测以前的标准档卡片太大、一屏内容太少。
+ */
+val SIZE_SCALES = listOf(0.68f, 0.74f, 0.8f, 0.9f, 1.0f)
 val SIZE_LABELS = listOf("较小", "小", "标准", "大", "特大")
+const val SIZE_DEFAULT = 2
+
+/** 0.0.2–0.0.3 的 5 档整体缩放，只用来迁移旧设置 */
+private val OLD_SIZE_SCALES = listOf(0.8f, 0.9f, 1.0f, 1.15f, 1.3f)
 
 /** 本地状态：上次播放、播放队列、待补发的进度、最近搜索、列表缓存 */
 class LocalStore(context: Context) {
@@ -43,16 +50,21 @@ class LocalStore(context: Context) {
         set(v) = prefs.edit().putString("theme_mode", v).apply()
 
     /**
-     * 显示大小 5 档（0 较小 … 2 标准 … 4 特大），对应整体缩放 [SIZE_SCALES]。
-     * 0.0.1 存的是缩放比例 ui_scale（0.7–1.3），第一次读取时换算成最接近的一档。
+     * 显示大小 5 档（0 较小 … 2 标准 … 4 特大），对应内容区缩放 [SIZE_SCALES]。
+     * 旧版本存的 size_level（0.0.2–0.0.3）或 ui_scale（0.0.1）按实际缩放换算成最接近的新档位，
+     * 所以升级后内容大小不变、左侧导航恢复原尺寸。
      */
     var sizeLevel: Int
         get() {
-            if (prefs.contains("size_level")) return prefs.getInt("size_level", 2).coerceIn(0, SIZE_SCALES.lastIndex)
-            val old = prefs.getFloat("ui_scale", 1f)
+            if (prefs.contains("content_size")) return prefs.getInt("content_size", SIZE_DEFAULT).coerceIn(0, SIZE_SCALES.lastIndex)
+            val old = when {
+                prefs.contains("size_level") -> OLD_SIZE_SCALES[prefs.getInt("size_level", 2).coerceIn(0, OLD_SIZE_SCALES.lastIndex)]
+                prefs.contains("ui_scale") -> prefs.getFloat("ui_scale", 1f)
+                else -> return SIZE_DEFAULT
+            }
             return SIZE_SCALES.indices.minBy { kotlin.math.abs(SIZE_SCALES[it] - old) }
         }
-        set(v) = prefs.edit().putInt("size_level", v.coerceIn(0, SIZE_SCALES.lastIndex)).remove("ui_scale").apply()
+        set(v) = prefs.edit().putInt("content_size", v.coerceIn(0, SIZE_SCALES.lastIndex)).remove("size_level").remove("ui_scale").apply()
 
     /** 上次成功检查更新的时间；自动检查每天最多一次 */
     var lastUpdateCheck: Long

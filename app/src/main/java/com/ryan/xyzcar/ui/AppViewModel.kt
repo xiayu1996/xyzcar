@@ -152,7 +152,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     fun bumpQueue() { queueVersion++ }
 
-    /** 显示大小（5 档，整体缩放）：实车屏幕密度未知，留一个手动调节 */
+    /** 显示大小（5 档，只缩放内容区） */
     var sizeLevel by mutableStateOf(app.local.sizeLevel)
         private set
     val uiScale: Float get() = com.ryan.xyzcar.data.SIZE_SCALES[sizeLevel]
