@@ -7,6 +7,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import com.ryan.xyzcar.data.CarLab
+import com.ryan.xyzcar.data.DebugLog
 import com.ryan.xyzcar.data.LocalStore
 import com.ryan.xyzcar.data.Repository
 import com.ryan.xyzcar.data.TokenStore
@@ -34,8 +36,14 @@ class App : Application() {
             OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build(),
             File(cacheDir, "updates"),
         )
+        DebugLog.init(this)
         CrashLog.install(this)
         watchNetwork()
+        // 车机快照和实验开关：后台线程，失败只写日志
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            runCatching { CarLab.onAppStart(this@App, local, BuildConfigInfo.VERSION) }
+                .onFailure { DebugLog.log("start", "启动快照出错：${it.javaClass.simpleName} ${it.message.orEmpty()}") }
+        }
     }
 
     /** 网络恢复时补发之前上报失败的进度（F6） */

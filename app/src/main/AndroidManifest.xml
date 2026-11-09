@@ -10,6 +10,24 @@
     <!-- 应用内更新：下载新版本后调起系统安装 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- 「车机信息」页对照其他应用（能分屏的 Apple Music 等）的配置：只读启动器里的应用 -->
+    <queries>
+        <!-- 只读小迪的默认应用设置（默认音乐 / 导航），排查语音打不开本应用 -->
+        <package android:name="com.byd.autovoice" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="byd.intent.category.START_IVI_PRIMARY" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="byd.intent.category.START_IVI_SECOND" />
+        </intent>
+    </queries>
+
     <application
         android:name=".App"
         android:allowBackup="false"
@@ -20,6 +38,11 @@
         android:resizeableActivity="true"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.XyzCar">
+
+        <!-- 比亚迪固件按应用级 meta-data 判断整个包能否分屏（denza-lab 对 DiLink 5.1 固件的记录） -->
+        <meta-data
+            android:name="BYD_SUPPORT_SPLIT_ACTIVITY"
+            android:value="1" />
 
         <activity
             android:name=".MainActivity"
@@ -32,6 +55,13 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- 比亚迪原生分屏（1/3、2/3 面板）启动应用时带的类别；声明后固件按类别查询时能找到本应用 -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="byd.intent.category.START_IVI_PRIMARY" />
+                <category android:name="byd.intent.category.START_IVI_SECOND" />
             </intent-filter>
         </activity>
 

@@ -15,6 +15,7 @@ object CrashLog {
             runCatching {
                 val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
                 File(dir, "crash-$ts.txt").writeText("thread=${t.name}\n" + e.stackTraceToString())
+                com.ryan.xyzcar.data.DebugLog.log("crash", "thread=${t.name} " + e.stackTraceToString().lines().take(12).joinToString(" ⏎ "))
                 dir.listFiles()?.sortedBy { it.name }?.dropLast(20)?.forEach { it.delete() }
             }
             previous?.uncaughtException(t, e)

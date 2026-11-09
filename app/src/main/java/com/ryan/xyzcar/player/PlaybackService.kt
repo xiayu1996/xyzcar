@@ -180,6 +180,26 @@ class PlaybackService : MediaSessionService() {
     }
 
     private inner class SessionCallback : MediaSession.Callback {
+        // 排查用：记下哪些系统组件（媒体卡片、小迪、方控）连了播放服务、发了什么按键
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            if (controller.packageName != packageName) {
+                com.ryan.xyzcar.data.DebugLog.log("media", "控制器连接：${controller.packageName} uid=${controller.uid} 版本=${controller.controllerVersion} 受信任=${controller.isTrusted}")
+            }
+            return super.onConnect(session, controller)
+        }
+
+        override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            if (controller.packageName != packageName) com.ryan.xyzcar.data.DebugLog.log("media", "控制器断开：${controller.packageName}")
+        }
+
+        override fun onMediaButtonEvent(session: MediaSession, controllerInfo: MediaSession.ControllerInfo, intent: android.content.Intent): Boolean {
+            val key = runCatching {
+                androidx.core.content.IntentCompat.getParcelableExtra(intent, android.content.Intent.EXTRA_KEY_EVENT, android.view.KeyEvent::class.java)
+            }.getOrNull()
+            com.ryan.xyzcar.data.DebugLog.log("media", "媒体按键：来自 ${controllerInfo.packageName} key=${key?.keyCode} action=${key?.action}")
+            return super.onMediaButtonEvent(session, controllerInfo, intent)
+        }
+
         // 控制器发来的 MediaItem 会丢掉 uri，这里用 extras 里的单集信息重建
         override fun onAddMediaItems(
             mediaSession: MediaSession,
@@ -193,6 +213,7 @@ class PlaybackService : MediaSessionService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            com.ryan.xyzcar.data.DebugLog.log("media", "继续播放请求：来自 ${controller.packageName}")
             val last = App.instance.local.lastPlayed
                 ?: return Futures.immediateFailedFuture(UnsupportedOperationException("no last played"))
             return Futures.immediateFuture(

@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import com.ryan.xyzcar.data.CarLab
+import com.ryan.xyzcar.data.DebugLog
 import com.ryan.xyzcar.ui.AppViewModel
 import com.ryan.xyzcar.ui.MainLayout
 import com.ryan.xyzcar.ui.screens.LoginScreen
@@ -24,8 +26,24 @@ class MainActivity : ComponentActivity() {
     private fun inTestLab(): Boolean =
         runCatching { android.provider.Settings.System.getString(contentResolver, "firebase.test.lab") == "true" }.getOrDefault(false)
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        DebugLog.log("launch", CarLab.describe(this, intent, "onNewIntent"))
+    }
+
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        DebugLog.log("window", "分屏状态变化 → $isInMultiWindowMode；${CarLab.window(this)}")
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        DebugLog.log("window", "配置变化；${CarLab.window(this)}")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DebugLog.log("launch", CarLab.describe(this, intent, if (savedInstanceState == null) "onCreate" else "onCreate(重建)"))
         enableEdgeToEdge()
         if (BuildConfig.DEBUG && (intent.getBooleanExtra("demo", false) || inTestLab())) vm.enableDemo()
         if (Build.VERSION.SDK_INT >= 33) {

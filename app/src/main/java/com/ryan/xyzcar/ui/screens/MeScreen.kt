@@ -78,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.ryan.xyzcar.BuildConfigInfo
+import com.ryan.xyzcar.data.AppProbe
 import com.ryan.xyzcar.data.SIZE_LABELS
 import com.ryan.xyzcar.ui.AppViewModel
 import com.ryan.xyzcar.ui.Route
@@ -268,6 +269,8 @@ private fun SettingsColumn(vm: AppViewModel) {
         style = MaterialTheme.typography.titleMedium, color = x.text,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(16.dp)).background(x.fill).padding(20.dp),
     )
+    CarLabSection()
+    Spacer(Modifier.height(24.dp))
 }
 
 /** 外观预览卡：迷你界面示意 + 单选圈；「跟随系统」左浅右深 */
@@ -394,7 +397,7 @@ private fun relatedProps(): List<Pair<String, String>> = runCatching {
     reader.join(500)
     val text = synchronized(out) { out.toString() }
     val re = Regex("""^\[(.+?)]: \[(.*)]$""")
-    val keep = Regex("byd|dilink|di[0-9]|baios|split|platformi|ui_version|ro\\.build\\.display|version\\.incremental|voice|assistant", RegexOption.IGNORE_CASE)
+    val keep = Regex("byd|dilink|di[0-9]|baios|split|freeform|multiwin|white|platformi|ui_version|ro\\.build\\.display|version\\.incremental|voice|assistant", RegexOption.IGNORE_CASE)
     text.lines().mapNotNull { re.find(it.trim())?.destructured?.let { (k, v) -> k to v } }
         .filter { (k, v) -> keep.containsMatchIn(k) && v.isNotEmpty() && v.length < 120 }
         .take(80)
@@ -406,6 +409,39 @@ private tailrec fun android.content.Context.activity(): Activity? = when (this) 
     else -> null
 }
 
+/** 应用对照：声明比亚迪分屏类别的应用 + 每个第三方应用的启动配置，一屏能拍下 */
+@Composable
+private fun AppCompare(split: List<String>, apps: List<AppProbe.AppInfo>) {
+    val x = Xyz
+    fun short(list: List<String>, keep: (String) -> Boolean = { false }): String {
+        if (list.isEmpty()) return "无"
+        val (key, rest) = list.partition(keep)
+        val shown = key + rest.take(maxOf(0, 4 - key.size))
+        val more = list.size - shown.size
+        return shown.joinToString("、") + if (more > 0) " 等 ${list.size} 个" else ""
+    }
+    Text("应用对照", style = MaterialTheme.typography.titleMedium, color = x.text, modifier = Modifier.padding(bottom = 6.dp))
+    Text(
+        "声明比亚迪分屏类别的应用（${split.size}）：" + if (split.isEmpty()) "无" else split.joinToString("、"),
+        style = MaterialTheme.typography.bodyMedium, color = x.text, modifier = Modifier.padding(vertical = 6.dp),
+    )
+    Hairline()
+    apps.forEach { a ->
+        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Text(
+                (if (a.self) "★ " else "") + "${a.label}  ${a.pkg}",
+                style = MaterialTheme.typography.bodyMedium, color = x.text, fontWeight = FontWeight.SemiBold,
+            )
+            Text(a.summary, style = MaterialTheme.typography.bodySmall, color = x.sub)
+            Text("自定义 intent：" + short(a.customIntents) { it.startsWith("byd") || it.contains("ivi", true) }, style = MaterialTheme.typography.bodySmall, color = x.sub)
+            Text("meta-data：" + short(a.metaData) { it.contains("byd", true) || it.startsWith("android.") }, style = MaterialTheme.typography.bodySmall, color = x.sub)
+        }
+        Hairline()
+    }
+    Spacer(Modifier.height(20.dp))
+    Text("系统属性", style = MaterialTheme.typography.titleMedium, color = x.text, modifier = Modifier.padding(bottom = 6.dp))
+}
+
 /** 车机信息：系统版本、屏幕、是否在分屏、比亚迪相关系统属性。用来排查分屏和语音，拍照发给开发者即可 */
 @Composable
 fun DiagnosticsScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
@@ -414,6 +450,17 @@ fun DiagnosticsScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     val conf = LocalConfiguration.current
     val props by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>()) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { relatedProps() }
+    }
+    val probe by androidx.compose.runtime.produceState<Pair<List<String>, List<AppProbe.AppInfo>>?>(null) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            AppProbe.bydSplitPackages(ctx) to AppProbe.thirdPartyApps(ctx)
+        }
+    }
+    val voice by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>()) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { AppProbe.voiceRoles(ctx) }
+    }
+    val split by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>()) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { splitRows(ctx) }
     }
     val basics = remember(conf.screenWidthDp, conf.screenHeightDp) {
         val dm = ctx.resources.displayMetrics
@@ -433,14 +480,46 @@ fun DiagnosticsScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     ScreenHeader("车机信息", onBack)
     Text("排查分屏和语音用：拍下这页发给开发者。只读取系统信息，不会修改任何设置。", style = MaterialTheme.typography.bodyMedium, color = x.sub)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 12.dp)) {
-        (basics + props.filter { p -> basics.none { it.first == p.first } }).forEach { (k, v) ->
+        val row = @Composable { k: String, v: String ->
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                 Text(k, style = MaterialTheme.typography.bodyMedium, color = x.sub, modifier = Modifier.weight(0.45f))
                 Text(v, style = MaterialTheme.typography.bodyMedium, color = x.text, modifier = Modifier.weight(0.55f))
             }
             Hairline()
         }
+        basics.forEach { (k, v) -> row(k, v) }
+        if (voice.isNotEmpty()) {
+            Spacer(Modifier.height(20.dp))
+            Text("小迪语音", style = MaterialTheme.typography.titleMedium, color = x.text, modifier = Modifier.padding(bottom = 6.dp))
+            voice.forEach { (k, v) -> row(k, v) }
+        }
+        if (split.isNotEmpty()) {
+            Spacer(Modifier.height(20.dp))
+            Text("分屏接口", style = MaterialTheme.typography.titleMedium, color = x.text, modifier = Modifier.padding(bottom = 6.dp))
+            split.forEach { (k, v) -> row(k, v) }
+        }
+        Spacer(Modifier.height(20.dp))
+        probe?.let { (splitPkgs, apps) -> AppCompare(splitPkgs, apps) }
+        val extraProps = props.filter { p -> basics.none { it.first == p.first } }
+        extraProps.forEach { (k, v) -> row(k, v) }
         if (props.isEmpty()) Text("没有读到比亚迪相关的系统属性", style = MaterialTheme.typography.bodyMedium, color = x.sub, modifier = Modifier.padding(top = 12.dp))
+        Spacer(Modifier.height(24.dp))
+        EventLogSection {
+            // 导出的完整报告：各段 + 应用对照 + 事件日志
+            buildString {
+                fun sec(title: String, rows: List<Pair<String, String>>) {
+                    append("## ").append(title).append('\n')
+                    rows.forEach { append(it.first).append(" = ").append(it.second).append('\n') }
+                }
+                sec("基本", basics); sec("小迪语音", voice); sec("分屏接口", split)
+                probe?.let { (splitPkgs, apps) ->
+                    append("## 应用对照\n声明比亚迪分屏类别：").append(splitPkgs).append('\n')
+                    apps.forEach { a -> append(if (a.self) "★ " else "").append(a.label).append(' ').append(a.pkg).append(" | ").append(a.summary).append(" | ").append(a.customIntents).append(" | ").append(a.metaData).append('\n') }
+                }
+                sec("系统属性", extraProps)
+                append("## 事件日志\n").append(com.ryan.xyzcar.data.DebugLog.read())
+            }
+        }
         Spacer(Modifier.height(24.dp))
     }
 }

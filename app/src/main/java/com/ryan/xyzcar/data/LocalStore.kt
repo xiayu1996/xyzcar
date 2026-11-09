@@ -76,6 +76,27 @@ class LocalStore(context: Context) {
         get() = prefs.getString("notified_update", "") ?: ""
         set(v) = prefs.edit().putString("notified_update", v).apply()
 
+    // 车机实验开关（默认全关）
+    /** 每次启动向小迪注册为音乐应用 */
+    var labVoiceRegister: Boolean
+        get() = prefs.getBoolean("lab_voice_register", false)
+        set(v) = prefs.edit().putBoolean("lab_voice_register", v).apply()
+
+    /** 小迪默认音乐设为本应用 */
+    var labMusicRole: Boolean
+        get() = prefs.getBoolean("lab_music_role", false)
+        set(v) = prefs.edit().putBoolean("lab_music_role", v).apply()
+
+    /** 设为本应用之前小迪的默认音乐包名，关闭时恢复 */
+    var musicOriginal: String
+        get() = prefs.getString("music_original", "") ?: ""
+        set(v) = prefs.edit().putString("music_original", v).apply()
+
+    /** 每次启动把本应用加入系统分屏常驻列表 */
+    var labSplitPersist: Boolean
+        get() = prefs.getBoolean("lab_split_persist", false)
+        set(v) = prefs.edit().putBoolean("lab_split_persist", v).apply()
+
     var speed: Float
         get() = prefs.getFloat("speed", 1f)
         set(v) = prefs.edit().putFloat("speed", v).apply()

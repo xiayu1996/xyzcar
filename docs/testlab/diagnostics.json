@@ -1,0 +1,6 @@
+[
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "我的"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 2000},
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "车机信息"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 5000}
+]
