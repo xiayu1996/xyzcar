@@ -92,7 +92,8 @@ jobs:
     needs: release
     if: ${{ !cancelled() && (needs.release.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Gitee 上传 APK 有时很慢（v0.0.4 上传完刚好撞到 15 分钟）
+    timeout-minutes: 40
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
       GITEE_REPO: xiayuryan/xyzcar
