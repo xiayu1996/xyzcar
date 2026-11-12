@@ -74,7 +74,7 @@ fun ContentArea(vm: AppViewModel) {
                 is Route.SubsShows -> SubsShowsScreen(vm, onBack)
                 is Route.History -> HistoryScreen(vm, onBack)
                 is Route.Queue -> QueueScreen(vm, onBack)
-                is Route.Diagnostics -> DiagnosticsScreen(vm, onBack)
+                is Route.Diagnostics -> DiagnosticsScreen(onBack)
             }
         }
     }

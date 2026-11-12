@@ -78,7 +78,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.ryan.xyzcar.BuildConfigInfo
-import com.ryan.xyzcar.data.AppProbe
 import com.ryan.xyzcar.data.SIZE_LABELS
 import com.ryan.xyzcar.ui.AppViewModel
 import com.ryan.xyzcar.ui.Route
@@ -88,6 +87,8 @@ import com.ryan.xyzcar.ui.components.card
 import com.ryan.xyzcar.ui.components.pressable
 import com.ryan.xyzcar.ui.theme.DarkColors
 import com.ryan.xyzcar.ui.theme.Dims
+import com.ryan.xyzcar.data.DebugLog
+import androidx.compose.material3.TextButton
 import com.ryan.xyzcar.ui.theme.LightColors
 import com.ryan.xyzcar.ui.theme.ThemeMode
 import com.ryan.xyzcar.ui.theme.Xyz
@@ -165,7 +166,10 @@ private fun AccountColumn(vm: AppViewModel) {
     Text(DISCLAIMER, style = MaterialTheme.typography.bodySmall, color = x.sub, modifier = Modifier.padding(top = 12.dp, bottom = 24.dp))
 }
 
-/** 检查更新 → 下载（带进度）→ 安装；首次安装先去系统设置允许本应用安装应用 */
+/**
+ * 检查更新 → 下载（带进度）→ 安装。比亚迪车机不给第三方应用安装权限（设置里也没有开关），
+ * 这时安装包另存到「下载/xyzcar/」和 U 盘，点击打开车机的文件管理去装。
+ */
 @Composable
 private fun UpdateRow(vm: AppViewModel) {
     val x = Xyz
@@ -179,12 +183,16 @@ private fun UpdateRow(vm: AppViewModel) {
         UpdateState.Latest -> "已是最新版本"
         is UpdateState.Available -> "发现新版本 ${s.release.tag}，点击下载"
         is UpdateState.Downloading -> "正在下载 ${s.release.tag}"
-        is UpdateState.Ready -> if (canInstall) "安装 ${s.release.tag}" else "允许安装后即可更新"
+        is UpdateState.Ready -> if (canInstall) "安装 ${s.release.tag}" else "用文件管理安装 ${s.release.tag}"
         is UpdateState.Failed -> if (s.release != null) "下载失败，点击重试" else "检查失败，点击重试"
     }
     val hint = when (s) {
         is UpdateState.Downloading -> "${(s.progress * 100).toInt()}%"
-        is UpdateState.Ready -> if (canInstall) "下载完成，已校验" else "点击打开设置，允许本应用安装应用，再返回点安装"
+        is UpdateState.Ready -> when {
+            canInstall -> "下载完成，已校验"
+            s.copies.isEmpty() -> "车机不允许本应用直接安装，安装包也没能另存，请用 U 盘安装"
+            else -> "车机不允许本应用直接安装。安装包已存到 ${s.copies.first()}，点这里打开文件管理，找到它点击安装"
+        }
         is UpdateState.Failed -> s.message
         else -> "当前 ${BuildConfigInfo.VERSION}"
     }
@@ -193,8 +201,10 @@ private fun UpdateRow(vm: AppViewModel) {
             UpdateState.Idle, UpdateState.Latest -> vm.checkUpdate(silent = false)
             is UpdateState.Failed -> if (s.release != null) vm.downloadUpdate() else vm.checkUpdate(silent = false)
             is UpdateState.Available -> vm.downloadUpdate()
-            is UpdateState.Ready -> runCatching {
-                ctx.startActivity(if (canInstall) Updater.installIntent(ctx, s.file) else Updater.permissionIntent(ctx))
+            is UpdateState.Ready -> {
+                val fm = if (canInstall) null else Updater.fileManagerIntent(ctx)
+                val r = runCatching { ctx.startActivity(fm ?: Updater.installIntent(ctx, s.file)) }
+                DebugLog.kv("update", "install_click", "via" to (fm?.component?.packageName ?: fm?.`package` ?: "installer"), "ok" to r.isSuccess, "error" to r.exceptionOrNull()?.javaClass?.simpleName)
             }
             else -> Unit
         }
@@ -207,6 +217,15 @@ private fun UpdateRow(vm: AppViewModel) {
             trackColor = x.accentFill,
             modifier = Modifier.fillMaxWidth().padding(start = 54.dp, end = 8.dp, bottom = 8.dp).height(6.dp).clip(RoundedCornerShape(3.dp)),
         )
+    }
+    AnimatedVisibility(s is UpdateState.Ready && !canInstall, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        if (s is UpdateState.Ready) TextButton(
+            onClick = {
+                val r = runCatching { ctx.startActivity(Updater.installIntent(ctx, s.file)) }
+                DebugLog.kv("update", "install_click", "via" to "installer_direct", "ok" to r.isSuccess, "error" to r.exceptionOrNull()?.javaClass?.simpleName)
+            },
+            modifier = Modifier.padding(start = 46.dp).heightIn(min = Dims.touch),
+        ) { Text("也可以试试直接安装", style = MaterialTheme.typography.titleSmall, color = x.accent) }
     }
     val notes = when (s) {
         is UpdateState.Available -> s.release.notes
@@ -383,142 +402,44 @@ internal fun TickSlider(value: Int, labels: List<String>, onChange: (Int) -> Uni
 
 // ---------------- 车机信息（诊断） ----------------
 
-private fun sysProp(key: String): String = runCatching {
-    Class.forName("android.os.SystemProperties").getMethod("get", String::class.java).invoke(null, key) as String
-}.getOrDefault("")
-
-/** getprop 里和比亚迪车机、分屏、版本相关的行（只读） */
-private fun relatedProps(): List<Pair<String, String>> = runCatching {
-    val p = ProcessBuilder("getprop").redirectErrorStream(true).start()
-    // 边读边等（输出较多时不读会把管道塞满），最多 2 秒：某些车机系统策略下 getprop 可能卡住
-    val out = StringBuilder()
-    val reader = Thread { runCatching { p.inputStream.bufferedReader().forEachLine { out.appendLine(it) } } }.apply { isDaemon = true; start() }
-    if (!p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) p.destroy()
-    reader.join(500)
-    val text = synchronized(out) { out.toString() }
-    val re = Regex("""^\[(.+?)]: \[(.*)]$""")
-    val keep = Regex("byd|dilink|di[0-9]|baios|split|freeform|multiwin|white|platformi|ui_version|ro\\.build\\.display|version\\.incremental|voice|assistant", RegexOption.IGNORE_CASE)
-    text.lines().mapNotNull { re.find(it.trim())?.destructured?.let { (k, v) -> k to v } }
-        .filter { (k, v) -> keep.containsMatchIn(k) && v.isNotEmpty() && v.length < 120 }
-        .take(80)
-}.getOrDefault(emptyList())
-
 private tailrec fun android.content.Context.activity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.activity()
     else -> null
 }
 
-/** 应用对照：声明比亚迪分屏类别的应用 + 每个第三方应用的启动配置，一屏能拍下 */
+/**
+ * 车机信息：导出按钮 + 几行摘要。原始数据（小迪设置表、分屏接口、应用对照、系统属性、事件日志）只进导出的报告，屏幕上不列。
+ */
 @Composable
-private fun AppCompare(split: List<String>, apps: List<AppProbe.AppInfo>) {
-    val x = Xyz
-    fun short(list: List<String>, keep: (String) -> Boolean = { false }): String {
-        if (list.isEmpty()) return "无"
-        val (key, rest) = list.partition(keep)
-        val shown = key + rest.take(maxOf(0, 4 - key.size))
-        val more = list.size - shown.size
-        return shown.joinToString("、") + if (more > 0) " 等 ${list.size} 个" else ""
-    }
-    Text("应用对照", style = MaterialTheme.typography.titleMedium, color = x.text, modifier = Modifier.padding(bottom = 6.dp))
-    Text(
-        "声明比亚迪分屏类别的应用（${split.size}）：" + if (split.isEmpty()) "无" else split.joinToString("、"),
-        style = MaterialTheme.typography.bodyMedium, color = x.text, modifier = Modifier.padding(vertical = 6.dp),
-    )
-    Hairline()
-    apps.forEach { a ->
-        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-            Text(
-                (if (a.self) "★ " else "") + "${a.label}  ${a.pkg}",
-                style = MaterialTheme.typography.bodyMedium, color = x.text, fontWeight = FontWeight.SemiBold,
-            )
-            Text(a.summary, style = MaterialTheme.typography.bodySmall, color = x.sub)
-            Text("自定义 intent：" + short(a.customIntents) { it.startsWith("byd") || it.contains("ivi", true) }, style = MaterialTheme.typography.bodySmall, color = x.sub)
-            Text("meta-data：" + short(a.metaData) { it.contains("byd", true) || it.startsWith("android.") }, style = MaterialTheme.typography.bodySmall, color = x.sub)
-        }
-        Hairline()
-    }
-    Spacer(Modifier.height(20.dp))
-    Text("系统属性", style = MaterialTheme.typography.titleMedium, color = x.text, modifier = Modifier.padding(bottom = 6.dp))
-}
-
-/** 车机信息：系统版本、屏幕、是否在分屏、比亚迪相关系统属性。用来排查分屏和语音，拍照发给开发者即可 */
-@Composable
-fun DiagnosticsScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
+fun DiagnosticsScreen(onBack: (() -> Unit)?) {
     val x = Xyz
     val ctx = LocalContext.current
     val conf = LocalConfiguration.current
-    val props by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>()) {
-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { relatedProps() }
-    }
-    val probe by androidx.compose.runtime.produceState<Pair<List<String>, List<AppProbe.AppInfo>>?>(null) {
+    val music by androidx.compose.runtime.produceState<String?>(null) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            AppProbe.bydSplitPackages(ctx) to AppProbe.thirdPartyApps(ctx)
+            com.ryan.xyzcar.data.BydBridge.readSwitch(ctx, com.ryan.xyzcar.data.BydBridge.MUSIC_SWITCH)?.let { pkg ->
+                runCatching { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)
+            } ?: "读不到"
         }
     }
-    val voice by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>()) {
-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { AppProbe.voiceRoles(ctx) }
-    }
-    val split by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>()) {
-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { splitRows(ctx) }
-    }
-    val basics = remember(conf.screenWidthDp, conf.screenHeightDp) {
-        val dm = ctx.resources.displayMetrics
-        listOf(
-            "设备" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
-            "Android" to "${android.os.Build.VERSION.RELEASE}（API ${android.os.Build.VERSION.SDK_INT}）",
-            "系统版本号" to android.os.Build.DISPLAY,
-            "当前窗口" to "${conf.screenWidthDp} × ${conf.screenHeightDp} dp",
-            "屏幕像素" to "${dm.widthPixels} × ${dm.heightPixels} px，密度 ${dm.density}",
-            "分屏中" to if (ctx.activity()?.isInMultiWindowMode == true) "是" else "否",
-            "ro.byd.ui.splitscreen" to sysProp("ro.byd.ui.splitscreen").ifEmpty { "（无）" },
-            "ro.build.baios.supportsplitscreen" to sysProp("ro.build.baios.supportsplitscreen").ifEmpty { "（无）" },
-            "ro.build.ui_platformized" to sysProp("ro.build.ui_platformized").ifEmpty { "（无）" },
-            "App 版本" to BuildConfigInfo.VERSION,
-        )
-    }
+    val rows = listOf(
+        "App 版本" to BuildConfigInfo.VERSION,
+        "车机系统" to android.os.Build.DISPLAY,
+        "Android" to "${android.os.Build.VERSION.RELEASE}（API ${android.os.Build.VERSION.SDK_INT}）",
+        "当前窗口" to "${conf.screenWidthDp} × ${conf.screenHeightDp} dp" + if (ctx.activity()?.isInMultiWindowMode == true) "，分屏中" else "",
+        "小迪默认音乐" to (music ?: "…"),
+    )
     ScreenHeader("车机信息", onBack)
-    Text("排查分屏和语音用：拍下这页发给开发者。只读取系统信息，不会修改任何设置。", style = MaterialTheme.typography.bodyMedium, color = x.sub)
+    Text("出问题时保存报告或用手机扫码下载，发给开发者", style = MaterialTheme.typography.bodyMedium, color = x.sub)
+    ExportBar()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 12.dp)) {
-        val row = @Composable { k: String, v: String ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                Text(k, style = MaterialTheme.typography.bodyMedium, color = x.sub, modifier = Modifier.weight(0.45f))
-                Text(v, style = MaterialTheme.typography.bodyMedium, color = x.text, modifier = Modifier.weight(0.55f))
+        rows.forEach { (k, v) ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                Text(k, style = MaterialTheme.typography.bodyLarge, color = x.sub, modifier = Modifier.weight(0.35f))
+                Text(v, style = MaterialTheme.typography.bodyLarge, color = x.text, modifier = Modifier.weight(0.65f))
             }
             Hairline()
-        }
-        basics.forEach { (k, v) -> row(k, v) }
-        if (voice.isNotEmpty()) {
-            Spacer(Modifier.height(20.dp))
-            Text("小迪语音", style = MaterialTheme.typography.titleMedium, color = x.text, modifier = Modifier.padding(bottom = 6.dp))
-            voice.forEach { (k, v) -> row(k, v) }
-        }
-        if (split.isNotEmpty()) {
-            Spacer(Modifier.height(20.dp))
-            Text("分屏接口", style = MaterialTheme.typography.titleMedium, color = x.text, modifier = Modifier.padding(bottom = 6.dp))
-            split.forEach { (k, v) -> row(k, v) }
-        }
-        Spacer(Modifier.height(20.dp))
-        probe?.let { (splitPkgs, apps) -> AppCompare(splitPkgs, apps) }
-        val extraProps = props.filter { p -> basics.none { it.first == p.first } }
-        extraProps.forEach { (k, v) -> row(k, v) }
-        if (props.isEmpty()) Text("没有读到比亚迪相关的系统属性", style = MaterialTheme.typography.bodyMedium, color = x.sub, modifier = Modifier.padding(top = 12.dp))
-        Spacer(Modifier.height(24.dp))
-        EventLogSection {
-            // 导出的完整报告：各段 + 应用对照 + 事件日志
-            buildString {
-                fun sec(title: String, rows: List<Pair<String, String>>) {
-                    append("## ").append(title).append('\n')
-                    rows.forEach { append(it.first).append(" = ").append(it.second).append('\n') }
-                }
-                sec("基本", basics); sec("小迪语音", voice); sec("分屏接口", split)
-                probe?.let { (splitPkgs, apps) ->
-                    append("## 应用对照\n声明比亚迪分屏类别：").append(splitPkgs).append('\n')
-                    apps.forEach { a -> append(if (a.self) "★ " else "").append(a.label).append(' ').append(a.pkg).append(" | ").append(a.summary).append(" | ").append(a.customIntents).append(" | ").append(a.metaData).append('\n') }
-                }
-                sec("系统属性", extraProps)
-                append("## 事件日志\n").append(com.ryan.xyzcar.data.DebugLog.read())
-            }
         }
         Spacer(Modifier.height(24.dp))
     }

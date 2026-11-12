@@ -10,8 +10,14 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import com.ryan.xyzcar.ui.components.BigButton
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,8 +32,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,53 +46,85 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.ryan.xyzcar.App
+import com.ryan.xyzcar.BuildConfigInfo
 import com.ryan.xyzcar.data.BydBridge
+import com.ryan.xyzcar.data.CarLab
 import com.ryan.xyzcar.data.DebugLog
+import com.ryan.xyzcar.data.LanShare
+import com.ryan.xyzcar.data.PublicFiles
+import com.ryan.xyzcar.ui.components.Chip
 import com.ryan.xyzcar.ui.components.Hairline
 import com.ryan.xyzcar.ui.theme.Dims
 import com.ryan.xyzcar.ui.theme.Xyz
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
-import java.util.zip.GZIPOutputStream
 
-/** 设置里的「车机实验功能」：全部默认关闭，打开 / 关闭的结果写进车机信息的日志 */
+/** 结果说明框：有内容时展开，内容变化淡入淡出 */
 @Composable
-internal fun CarLabSection() {
+private fun ResultBox(text: String) {
     val x = Xyz
-    val ctx = LocalContext.current
-    val store = App.instance.local
-    val scope = rememberCoroutineScope()
-    var register by remember { mutableStateOf(store.labVoiceRegister) }
-    var music by remember { mutableStateOf(store.labMusicRole) }
-    var split by remember { mutableStateOf(store.labSplitPersist) }
-    var result by remember { mutableStateOf("") }
-    fun run(block: () -> String) = scope.launch { result = withContext(Dispatchers.IO) { runCatching(block).getOrElse { "出错：${it.javaClass.simpleName}" } } }
-
-    Text("车机实验功能", style = MaterialTheme.typography.titleLarge, color = x.text, modifier = Modifier.padding(top = 36.dp, bottom = 6.dp))
-    Text("比亚迪车机的集成测试，默认全部关闭。每一步的结果都记在「车机信息」的事件日志里。", style = MaterialTheme.typography.bodyMedium, color = x.sub)
-    LabSwitch("注册到小迪音乐列表", "打开后每次启动向小迪登记为音乐应用，之后可在小迪设置或底部音乐卡片里选择本应用；不会改默认音乐", register) { on ->
-        register = on; store.labVoiceRegister = on
-        run { if (on) BydBridge.registerMusicApp(ctx) else "已关闭（系统里已登记的条目无法撤回，不影响使用）".also { DebugLog.log("voice", "关闭注册开关") } }
-    }
-    LabSwitch("小迪默认音乐用本应用", "打开后对小迪说「播放音乐」「继续播放」交给本应用；关闭时恢复原来的默认音乐", music) { on ->
-        music = on; store.labMusicRole = on
-        run { if (on) BydBridge.takeMusicRole(ctx, store) else BydBridge.restoreMusicRole(ctx, store) }
-    }
-    LabSwitch("加入系统分屏列表", "打开后每次启动请求车机把本应用当作可分屏应用（车机重启后需要重新打开本应用）", split) { on ->
-        split = on; store.labSplitPersist = on
-        run { if (on) BydBridge.addPersistentSplitApp(ctx) else "已关闭，车机重启后失效".also { DebugLog.log("split", "关闭分屏常驻开关") } }
-    }
-    AnimatedVisibility(result.isNotEmpty(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-        AnimatedContent(result, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) }, label = "labResult") { r ->
+    AnimatedVisibility(text.isNotEmpty(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        AnimatedContent(text, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) }, label = "labResult") { r ->
             Text(r, style = MaterialTheme.typography.bodyMedium, color = x.accentText, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(x.accentFill).padding(14.dp))
         }
     }
+}
+
+/** 设置里的「车机测试」：临时测试用，默认关闭，每次操作的结果写进报告的日志 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun CarLabSection(store: com.ryan.xyzcar.data.LocalStore = App.instance.local) {
+    val x = Xyz
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var music by remember { mutableStateOf(store.labMusicRole) }
+    var alias by remember { mutableStateOf(runCatching { CarLab.enabledAlias(ctx) }.getOrNull()) }
+    var custom by remember { mutableStateOf("") }
+    var result by remember { mutableStateOf("") }
+    fun run(toggle: String, on: Any?, block: () -> String) = scope.launch {
+        result = withContext(Dispatchers.IO) {
+            runCatching(block).getOrElse { "出错：${it.javaClass.simpleName}" }.also { DebugLog.kv("lab", "toggle", "name" to toggle, "value" to on, "ui" to it) }
+        }
+    }
+
+    Text("车机测试", style = MaterialTheme.typography.titleLarge, color = x.text, modifier = Modifier.padding(top = 36.dp))
+    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+        Text("额外桌面入口", style = MaterialTheme.typography.titleMedium, color = x.text)
+        Text("桌面多一个打开本应用的图标，测小迪「打开 + 名字」", style = MaterialTheme.typography.bodySmall, color = x.sub)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 10.dp)) {
+            (listOf<Pair<String?, String>>(null to "不加") + CarLab.LAUNCHER_ALIASES).forEach { (cls, name) ->
+                Chip(name, selected = alias == cls) { alias = cls; run("alias", cls) { CarLab.setAlias(ctx, cls) } }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 10.dp)) {
+            Box(
+                Modifier.weight(1f).heightIn(min = Dims.touch).clip(RoundedCornerShape(18.dp)).background(x.fill).padding(horizontal = 20.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                if (custom.isEmpty()) Text("自定义名字", style = MaterialTheme.typography.titleMedium, color = x.sub)
+                BasicTextField(
+                    value = custom, onValueChange = { custom = it.take(10) }, singleLine = true,
+                    textStyle = MaterialTheme.typography.titleMedium.copy(color = x.text), cursorBrush = SolidColor(x.accent),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            BigButton("添加到桌面", tinted = true, enabled = custom.isNotBlank()) { run("shortcut", custom) { CarLab.pinShortcut(ctx, custom) } }
+        }
+    }
+    Hairline()
+    LabSwitch("小迪默认音乐用本应用", "把小迪的默认音乐换成本应用，关闭时换回原来的", music) { on ->
+        music = on; store.labMusicRole = on
+        run("music", on) { if (on) BydBridge.takeMusicRole(ctx, store) else BydBridge.restoreMusicRole(ctx, store) }
+    }
+    ResultBox(result)
 }
 
 @Composable
@@ -106,72 +145,85 @@ private fun LabSwitch(title: String, hint: String, checked: Boolean, onChange: (
     Hairline()
 }
 
-/** 事件日志（最新在上，最多显示 300 行）+ 清空 / 导出二维码 */
+/**
+ * 导出给开发者（agent）的报告，放在车机信息页顶部。
+ * - 保存报告文件：存到「下载/xyzcar/」和 U 盘，用车机文件管理复制走；
+ * - 手机扫码下载：车机临时开一个只读网页，二维码里只是网址，手机浏览器打开即可，不经过第三方服务器；
+ * - 导出媒体中心安装包：给开发者离线分析音乐源名单怎么定的。
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun EventLogSection(report: () -> String) {
-    val x = Xyz
-    var version by remember { mutableIntStateOf(0) }
-    val lines = remember(version) { DebugLog.read().lines().filter { it.isNotBlank() }.asReversed().take(300) }
-    var qr by remember { mutableStateOf<List<String>?>(null) }
+internal fun ExportBar() {
+    val ctx = LocalContext.current
+    var share by remember { mutableStateOf<LanShare.Session?>(null) }
+    var status by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-        Text("事件日志", style = MaterialTheme.typography.titleMedium, color = x.text, modifier = Modifier.weight(1f))
-        OutlinedButton(onClick = { scope.launch { qr = withContext(Dispatchers.Default) { qrChunks(report()) } } }, modifier = Modifier.heightIn(min = Dims.touch)) {
-            Text("导出二维码", style = MaterialTheme.typography.titleSmall)
-        }
-        OutlinedButton(onClick = { version++ }, modifier = Modifier.heightIn(min = Dims.touch)) { Text("刷新", style = MaterialTheme.typography.titleSmall) }
-        OutlinedButton(onClick = { DebugLog.clear(); version++ }, modifier = Modifier.heightIn(min = Dims.touch)) { Text("清空", style = MaterialTheme.typography.titleSmall) }
+    DisposableEffect(Unit) { onDispose { LanShare.stop() } }
+    fun task(working: String, block: suspend () -> String) = scope.launch {
+        if (busy) return@launch
+        busy = true
+        status = working
+        status = runCatching { block() }.getOrElse { "出错：${it.javaClass.simpleName}" }
+        busy = false
     }
-    Text("记录启动方式、分屏变化、哪个系统组件连了播放服务、实验开关的结果和崩溃。出问题后点「导出二维码」，用手机逐张扫码，把文字发给开发者。", style = MaterialTheme.typography.bodySmall, color = x.sub)
-    if (lines.isEmpty()) Text("暂无记录", style = MaterialTheme.typography.bodyMedium, color = x.sub, modifier = Modifier.padding(vertical = 8.dp))
-    lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = x.text, modifier = Modifier.padding(vertical = 3.dp)) }
-    qr?.let { chunks -> QrPager(chunks) { qr = null } }
+    suspend fun report(): String = withContext(Dispatchers.IO) {
+        runCatching { CarLab.report(ctx, BuildConfigInfo.VERSION) }
+            .getOrElse { "report_error=${it.javaClass.simpleName}\n" + DebugLog.compact(DebugLog.read()) }
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+        OutlinedButton(onClick = {
+            task("正在保存…") {
+                val text = report()
+                val paths = withContext(Dispatchers.IO) { PublicFiles.save(ctx, CarLab.reportFileName(), "text/plain") { it.write(text.toByteArray()) } }
+                if (paths.isEmpty()) "保存失败，试试「手机扫码下载」" else "已保存。用车机「文件管理」复制到 U 盘，再发给开发者：\n" + paths.joinToString("\n")
+            }
+        }, modifier = Modifier.heightIn(min = Dims.touch)) { Text("保存报告文件", style = MaterialTheme.typography.titleSmall) }
+        OutlinedButton(onClick = {
+            task("正在准备…") {
+                val text = report()
+                val s = withContext(Dispatchers.IO) { LanShare.start(text) }
+                if (s == null) "车机没有连 Wi-Fi，也没有开热点。先让车机连上手机热点，再点一次" else { share = s; "" }
+            }
+        }, modifier = Modifier.heightIn(min = Dims.touch)) { Text("手机扫码下载", style = MaterialTheme.typography.titleSmall) }
+        OutlinedButton(onClick = {
+            task("正在复制，可能要半分钟…") {
+                val r = withContext(Dispatchers.IO) { BydBridge.exportMediaApks(ctx) }
+                if (r.isEmpty()) "没有找到媒体中心" else "已复制（给开发者分析音乐源名单）：\n" + r.joinToString("\n")
+            }
+        }, modifier = Modifier.heightIn(min = Dims.touch)) { Text("导出媒体中心安装包", style = MaterialTheme.typography.titleSmall) }
+    }
+    ResultBox(status)
+    share?.let { s -> LanShareDialog(s) { LanShare.stop(); share = null } }
 }
 
-/** 报告压缩成 gzip + base64，按 1500 字符切片，每片前缀「XYZ 序号/总数」 */
-internal fun qrChunks(text: String): List<String> {
-    val bos = ByteArrayOutputStream()
-    GZIPOutputStream(bos).use { it.write(text.toByteArray()) }
-    val b64 = java.util.Base64.getEncoder().encodeToString(bos.toByteArray())
-    val parts = b64.chunked(1500)
-    return parts.mapIndexed { i, p -> "XYZ ${i + 1}/${parts.size} $p" }
-}
-
+/** 手机下载报告：左边说明和关闭按钮（驾驶位一侧），右边一个网址二维码；到时间自动关闭 */
 @Composable
-private fun QrPager(chunks: List<String>, onClose: () -> Unit) {
-    var page by remember { mutableIntStateOf(0) }
+private fun LanShareDialog(s: LanShare.Session, onClose: () -> Unit) {
+    LaunchedEffect(s) {
+        delay((s.until - System.currentTimeMillis()).coerceAtLeast(0))
+        onClose()
+    }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Row(
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(32.dp),
-            modifier = Modifier.clip(RoundedCornerShape(24.dp)).background(Color.White).padding(28.dp),
+            modifier = Modifier.padding(24.dp).clip(RoundedCornerShape(24.dp)).background(Color.White).padding(28.dp),
         ) {
-            AnimatedContent(page, transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) }, label = "qrPage") { p ->
-                val matrix = remember(p) { qrMatrix(chunks[p]) }
-                Canvas(Modifier.size(440.dp)) {
-                    val cell = minOf(size.width, size.height) / matrix.width
-                    for (yy in 0 until matrix.height) for (xx in 0 until matrix.width) {
-                        if (matrix[xx, yy]) drawRect(Color.Black, Offset(xx * cell, yy * cell), Size(cell + 0.5f, cell + 0.5f))
-                    }
-                }
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.width(240.dp)) {
-                Text("第 ${page + 1} / ${chunks.size} 张", style = MaterialTheme.typography.headlineSmall, color = Color(0xFF161517))
-                Text("用手机扫码，把每张扫出的文字按顺序发给开发者", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF5C5B61))
-                OutlinedButton(onClick = { page-- }, enabled = page > 0, modifier = Modifier.fillMaxWidth().heightIn(min = Dims.touch)) { Text("上一张") }
-                OutlinedButton(onClick = { page++ }, enabled = page < chunks.lastIndex, modifier = Modifier.fillMaxWidth().heightIn(min = Dims.touch)) { Text("下一张") }
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.width(360.dp)) {
+                Text("手机扫码下载报告", style = MaterialTheme.typography.headlineSmall, color = Color(0xFF161517))
+                Text("手机和车机要在同一个网络：车机连手机热点，或手机连车机热点。扫码后用浏览器打开，把页面内容或文件发给开发者。", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF5C5B61))
+                s.urls.forEach { Text(it, style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace), color = Color(0xFF161517)) }
+                Text("${LanShare.MINUTES} 分钟后或离开本页自动关闭", style = MaterialTheme.typography.bodySmall, color = Color(0xFF5C5B61))
                 OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth().heightIn(min = Dims.touch)) { Text("关闭") }
+            }
+            val matrix = remember(s) { qrMatrix(s.urls.first(), ErrorCorrectionLevel.M, margin = 2) }
+            Canvas(Modifier.size(320.dp)) {
+                val cell = minOf(size.width, size.height) / matrix.width
+                for (yy in 0 until matrix.height) for (xx in 0 until matrix.width) {
+                    if (matrix[xx, yy]) drawRect(Color.Black, Offset(xx * cell, yy * cell), Size(cell + 0.5f, cell + 0.5f))
+                }
             }
         }
     }
 }
 
-/** 车机信息里的「分屏接口」段 */
-internal fun splitRows(ctx: android.content.Context): List<Pair<String, String>> {
-    val tx = BydBridge.transactions()
-    return listOf(
-        "本应用分屏标记" to BydBridge.splitMetaData(ctx),
-        "系统事务" to "可见 ${tx.visible} 个" + (tx.error?.let { "，$it" } ?: ""),
-        "分屏相关事务" to tx.split.entries.joinToString("、") { "${it.key}#${it.value}" }.ifEmpty { "无" },
-        "本应用可分屏" to BydBridge.isSupportSplit(ctx.packageName, ctx),
-    ) + BydBridge.unionInfo(ctx) + BydBridge.splitSettings(ctx)
-}

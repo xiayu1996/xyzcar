@@ -76,12 +76,7 @@ class LocalStore(context: Context) {
         get() = prefs.getString("notified_update", "") ?: ""
         set(v) = prefs.edit().putString("notified_update", v).apply()
 
-    // 车机实验开关（默认全关）
-    /** 每次启动向小迪注册为音乐应用 */
-    var labVoiceRegister: Boolean
-        get() = prefs.getBoolean("lab_voice_register", false)
-        set(v) = prefs.edit().putBoolean("lab_voice_register", v).apply()
-
+    // 车机测试开关（默认关）
     /** 小迪默认音乐设为本应用 */
     var labMusicRole: Boolean
         get() = prefs.getBoolean("lab_music_role", false)
@@ -92,10 +87,10 @@ class LocalStore(context: Context) {
         get() = prefs.getString("music_original", "") ?: ""
         set(v) = prefs.edit().putString("music_original", v).apply()
 
-    /** 每次启动把本应用加入系统分屏常驻列表 */
-    var labSplitPersist: Boolean
-        get() = prefs.getBoolean("lab_split_persist", false)
-        set(v) = prefs.edit().putBoolean("lab_split_persist", v).apply()
+    /** 上次写进事件日志的车机快照哈希；变化时才整份重写 */
+    var lastSnapshotHash: String
+        get() = prefs.getString("last_snapshot_hash", "") ?: ""
+        set(v) = prefs.edit().putString("last_snapshot_hash", v).apply()
 
     var speed: Float
         get() = prefs.getFloat("speed", 1f)

@@ -7,13 +7,33 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- 应用内更新：下载新版本后调起系统安装 -->
+    <!-- 开机时拉起一次进程，把本应用重新加入比亚迪 3 分屏列表（固件重启后会清空） -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 应用内更新：下载新版本后调起系统安装（比亚迪车机不给第三方开这个权限，届时改由文件管理安装） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- 「车机信息」页对照其他应用（能分屏的 Apple Music 等）的配置：只读启动器里的应用 -->
     <queries>
         <!-- 只读小迪的默认应用设置（默认音乐 / 导航），排查语音打不开本应用 -->
         <package android:name="com.byd.autovoice" />
+        <!-- 只读媒体中心（音乐源列表 / 底部卡片）对外开放了什么，排查本应用为什么进不了音乐源 -->
+        <package android:name="com.byd.mediacenter" />
+        <package android:name="com.byd.localmusic" />
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
+        <intent>
+            <action android:name="byd.intent.action.START_MEDIA" />
+        </intent>
+        <intent>
+            <action android:name="byd.intent.action.SWITCH_MEDIA_MODE" />
+        </intent>
+        <intent>
+            <action android:name="byd.intent.action.HANDLE_MEDIA_KEY" />
+        </intent>
+        <intent>
+            <action android:name="byd.intent.action.KILL_MEDIA_CENTER" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
@@ -64,6 +84,37 @@
                 <category android:name="byd.intent.category.START_IVI_SECOND" />
             </intent-filter>
         </activity>
+
+        <!-- 小迪「打开 X」测试用的额外启动器入口，默认禁用，设置里的实验开关启用其中一个。
+             「路上听」里的「听」可能让小迪把整句当成听歌意图，换成没有媒体含义的名字对照 -->
+        <activity-alias
+            android:name=".AliasLuming"
+            android:enabled="false"
+            android:exported="true"
+            android:label="@string/alias_luming"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AliasNingmeng"
+            android:enabled="false"
+            android:exported="true"
+            android:label="@string/alias_ningmeng"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <receiver android:name=".BootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".player.PlaybackService"

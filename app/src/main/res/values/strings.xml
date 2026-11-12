@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">路上听</string>
+    <string name="alias_luming">鹿鸣</string>
+    <string name="alias_ningmeng">柠檬</string>
 </resources>
