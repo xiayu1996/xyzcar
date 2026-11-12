@@ -20,6 +20,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.ryan.xyzcar.BuildConfig
 import com.ryan.xyzcar.data.Updater
+import com.ryan.xyzcar.data.PublicFiles
+import com.ryan.xyzcar.data.DebugLog
 import kotlinx.serialization.json.JsonElement
 import java.io.IOException
 
@@ -202,7 +204,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         updateJob = viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { app.updater.download(rel) { p -> update = UpdateState.Downloading(rel, p) } }
-            }.onSuccess { update = UpdateState.Ready(rel, it) }
+            }.onSuccess { apk ->
+                // 车机不让本应用直接安装时，把安装包放到文件管理看得到的地方，交给文件管理安装
+                val canInstall = Updater.canInstall(app)
+                val copies = if (canInstall) emptyList() else withContext(Dispatchers.IO) {
+                    PublicFiles.prune(app, "xyzcar-%.apk")
+                    PublicFiles.save(app, apk.name, "application/vnd.android.package-archive") { out -> apk.inputStream().use { it.copyTo(out) } }
+                }
+                DebugLog.kv("update", "ready", "tag" to rel.tag, "can_install" to canInstall, "copies" to copies.size, "installer" to Updater.selfInstaller(app))
+                update = UpdateState.Ready(rel, apk, copies)
+            }
                 .onFailure { update = UpdateState.Failed("下载失败：${it.message}", rel) }
         }
     }
@@ -314,6 +325,7 @@ sealed interface UpdateState {
     data object Latest : UpdateState
     data class Available(val release: Updater.Release) : UpdateState
     data class Downloading(val release: Updater.Release, val progress: Float) : UpdateState
-    data class Ready(val release: Updater.Release, val file: java.io.File) : UpdateState
+    /** [copies]：车机不让直接安装时，安装包另存到的位置（给文件管理装） */
+    data class Ready(val release: Updater.Release, val file: java.io.File, val copies: List<String> = emptyList()) : UpdateState
     data class Failed(val message: String, val release: Updater.Release?) : UpdateState
 }

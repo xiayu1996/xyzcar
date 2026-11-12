@@ -2,8 +2,6 @@ package com.ryan.xyzcar.data
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
 import androidx.core.content.FileProvider
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -162,10 +160,28 @@ class Updater(
 
         fun canInstall(ctx: Context) = ctx.packageManager.canRequestPackageInstalls()
 
-        /** 系统「允许安装未知应用」设置页（只针对本应用） */
-        fun permissionIntent(ctx: Context) =
-            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}"))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        /** 发起安装本应用的应用（侧载时通常是车机的文件管理）；读不到返回 null */
+        fun selfInstaller(ctx: Context): String? = runCatching {
+            val pm = ctx.packageManager
+            if (android.os.Build.VERSION.SDK_INT >= 30) pm.getInstallSourceInfo(ctx.packageName).let { it.initiatingPackageName ?: it.installingPackageName }
+            else @Suppress("DEPRECATION") pm.getInstallerPackageName(ctx.packageName)
+        }.getOrNull()
+
+        private val SYSTEM_INSTALLERS = Regex("packageinstaller|^android$|^com\\.android\\.shell$")
+        private val FILE_MANAGER_PKG = Regex("file(manager|explorer|browser)|documentsui", RegexOption.IGNORE_CASE)
+
+        /**
+         * 车机的文件管理：优先用当初装本应用的那个应用，其次找启动器里名字带「文件」的。
+         * 比亚迪车机只给自带的文件管理开了安装权限，本应用自己装不了（设置里也没有开关）。
+         */
+        fun fileManagerIntent(ctx: Context): Intent? = runCatching {
+            val pm = ctx.packageManager
+            selfInstaller(ctx)?.takeUnless { SYSTEM_INSTALLERS.containsMatchIn(it) }?.let { pm.getLaunchIntentForPackage(it) }
+                ?.let { return@runCatching it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+            pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+                .firstOrNull { it.loadLabel(pm).contains("文件") || FILE_MANAGER_PKG.containsMatchIn(it.activityInfo.packageName) }
+                ?.let { Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(it.activityInfo.packageName, it.activityInfo.name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+        }.getOrNull()
 
         fun installIntent(ctx: Context, apk: File): Intent =
             Intent(Intent.ACTION_VIEW)
