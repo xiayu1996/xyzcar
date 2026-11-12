@@ -33,9 +33,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.VerticalAlignTop
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
@@ -333,11 +331,10 @@ fun QueueScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
         itemsIndexed(q, key = { _, ep -> ep.eid }) { i, ep ->
             Box(Modifier.animateItem()) {
                 QueueRow(
-                    ep, first = i == 0, last = i == q.lastIndex,
+                    ep, first = i == 0,
                     onOpen = { vm.push(Route.EpisodeDetail(ep)) },
                     onPlay = { vm.repo.removeFromQueue(ep.eid); changed(); vm.player.play(ep) },
-                    onUp = { vm.repo.moveInQueue(ep.eid, -1); changed() },
-                    onDown = { vm.repo.moveInQueue(ep.eid, 1); changed() },
+                    onTop = { vm.repo.moveInQueue(ep.eid, -i); changed() },
                     onRemove = { vm.repo.removeFromQueue(ep.eid); changed() },
                 )
             }
@@ -345,19 +342,27 @@ fun QueueScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     }
 }
 
+/**
+ * 播放列表行：单集行 + 两个同样式的浅底圆钮「移到最前」「移出」。
+ * 车里点上下箭头一格格挪太费事，排序只保留「移到最前」（想先听哪集就点哪集）；第一项不显示但占位，两列按钮上下对齐。
+ */
 @Composable
 internal fun QueueRow(
-    ep: Episode, first: Boolean, last: Boolean,
-    onOpen: () -> Unit, onPlay: () -> Unit, onUp: () -> Unit, onDown: () -> Unit, onRemove: () -> Unit,
+    ep: Episode, first: Boolean,
+    onOpen: () -> Unit, onPlay: () -> Unit, onTop: () -> Unit, onRemove: () -> Unit,
 ) {
-    // 3 个排序按钮约占 230dp；宽度不够（放大到特大）时换到第二行，避免标题被挤成每行几个字
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val stacked = maxWidth < QUEUE_ROW_INLINE_MIN
         val x = Xyz
         val tools: @Composable () -> Unit = {
-            RoundIconButton(Icons.Filled.KeyboardArrowUp, "上移", enabled = !first, plain = true, tint = x.sub, onClick = onUp)
-            RoundIconButton(Icons.Filled.KeyboardArrowDown, "下移", enabled = !last, plain = true, tint = x.sub, onClick = onDown)
-            RoundIconButton(Icons.Filled.Delete, "移除", plain = true, tint = x.sub, onClick = onRemove)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(Dims.touch)) {
+                    androidx.compose.animation.AnimatedVisibility(!first, enter = fadeIn(), exit = fadeOut()) {
+                        RoundIconButton(Icons.Filled.VerticalAlignTop, "移到最前", size = 56.dp, tint = x.sub, onClick = onTop)
+                    }
+                }
+                RoundIconButton(Icons.Filled.Close, "移出播放列表", size = 56.dp, tint = x.sub, onClick = onRemove)
+            }
         }
         if (stacked) {
             Column {
@@ -373,5 +378,5 @@ internal fun QueueRow(
     }
 }
 
-/** 封面 96 + 标题至少 260 + 播放键 72 + 3 个按钮 216 */
-private val QUEUE_ROW_INLINE_MIN = 700.dp
+/** 封面 96 + 标题至少 260 + 播放键 72 + 2 个按钮 152 */
+private val QUEUE_ROW_INLINE_MIN = 640.dp

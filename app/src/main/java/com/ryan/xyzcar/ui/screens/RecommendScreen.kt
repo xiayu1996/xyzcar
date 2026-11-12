@@ -287,7 +287,7 @@ private fun CardsBody(
 }
 
 /**
- * 推荐卡片：节目色浅底，左上标题（粗体两行）+ 简介，右侧封面，底部一栏节目名 / 收听数 / 带时长的播放胶囊。
+ * 推荐卡片：节目色浅底，左上标题（粗体两行）+ 简介，右侧封面，底部一栏带时长的播放胶囊（靠左）/ 节目名 / 收听数。
  */
 @Composable
 internal fun RecommendCard(ep: Episode, playing: Boolean, onOpen: () -> Unit, onPlay: () -> Unit, modifier: Modifier = Modifier) {
@@ -312,15 +312,7 @@ internal fun RecommendCard(ep: Episode, playing: Boolean, onOpen: () -> Unit, on
         }
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(ep.podcastTitle, style = MaterialTheme.typography.bodyMedium, color = x.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-            if (ep.playCount > 0) {
-                Spacer(Modifier.width(12.dp))
-                Icon(Icons.Outlined.Headphones, null, tint = x.sub, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(4.dp))
-                Text(Fmt.count(ep.playCount), style = MaterialTheme.typography.bodyMedium, color = x.sub, maxLines = 1)
-            }
-            Spacer(Modifier.weight(1f))
-            Spacer(Modifier.width(12.dp))
+            // 播放胶囊放左下：靠驾驶位一侧
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -335,6 +327,14 @@ internal fun RecommendCard(ep: Episode, playing: Boolean, onOpen: () -> Unit, on
                 }
                 Spacer(Modifier.width(6.dp))
                 Text(if (ep.paid) "付费" else Fmt.minutes(ep.durationSec).ifEmpty { "播放" }, style = MaterialTheme.typography.labelLarge, color = x.text)
+            }
+            Spacer(Modifier.width(14.dp))
+            Text(ep.podcastTitle, style = MaterialTheme.typography.bodyMedium, color = x.text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            if (ep.playCount > 0) {
+                Spacer(Modifier.width(12.dp))
+                Icon(Icons.Outlined.Headphones, null, tint = x.sub, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(Fmt.count(ep.playCount), style = MaterialTheme.typography.bodyMedium, color = x.sub, maxLines = 1)
             }
         }
     }

@@ -390,7 +390,7 @@ fun episodeMeta(ep: Episode, showPodcast: Boolean, showDate: Boolean = true): Pa
 }
 
 /**
- * 单集行（官方「更新」「为你推荐」的样式）：封面 | 节目名（灰）/ 标题（两行）/ 状态 | 加入播放列表 | 播放键（带进度环）。
+ * 单集行（官方「更新」「为你推荐」的样式）：播放键（带进度环，靠驾驶位放行首）| 封面 | 节目名（灰）/ 标题（两行）/ 状态 | 加入播放列表。
  */
 @Composable
 fun EpisodeRow(
@@ -415,6 +415,10 @@ fun EpisodeRow(
                 .alpha(if (ep.paid) 0.55f else 1f)
                 .padding(vertical = 10.dp, horizontal = 4.dp),
         ) {
+            // 播放键在行首：靠驾驶位一侧，不用越过整行去按
+            val ring = if (ep.durationSec > 0 && ep.progressSec > 0) ep.progressSec.toFloat() / ep.durationSec else null
+            PlayButton(playing = playing, progress = ring, onClick = onPlay, enabled = !ep.paid)
+            Spacer(Modifier.width(10.dp))
             Cover(ep.coverUrl, coverSize, title = ep.podcastTitle.ifEmpty { ep.title }, color = ep.color)
             Spacer(Modifier.width(Dims.gap))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -441,9 +445,6 @@ fun EpisodeRow(
                 Spacer(Modifier.width(4.dp))
                 RoundIconButton(Icons.AutoMirrored.Filled.PlaylistAdd, "加入播放列表", plain = true, tint = x.sub, onClick = onEnqueue)
             }
-            Spacer(Modifier.width(4.dp))
-            val ring = if (ep.durationSec > 0 && ep.progressSec > 0) ep.progressSec.toFloat() / ep.durationSec else null
-            PlayButton(playing = playing, progress = ring, onClick = onPlay, enabled = !ep.paid)
         }
     }
 }

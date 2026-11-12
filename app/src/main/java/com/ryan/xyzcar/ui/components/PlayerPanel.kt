@@ -26,17 +26,19 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.Forward30
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -57,9 +59,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -91,81 +95,111 @@ data class PlayerActions(
 
 private fun speedText(speed: Float) = (if (speed % 1f == 0f) "%.1f".format(speed) else "%.2f".format(speed).trimEnd('0')) + "x"
 
-/** 后退 15 秒图标：回转箭头中间写 15（Material 没有现成的 Replay15 填色版） */
+/**
+ * 快退 / 快进图标：同一个回转箭头（快进水平镜像）+ 同一套数字字形，两边大小、粗细一致。
+ * 数字按图标尺寸换算，不跟系统字号缩放，免得放大字号后撑出圆圈。
+ */
 @Composable
-private fun Rewind15(tint: Color, size: Dp) {
+private fun SkipIcon(seconds: Int, forward: Boolean, tint: Color, size: Dp) {
+    val numSize = with(LocalDensity.current) { (size * 0.3f).toSp() }
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(size)) {
-        Icon(Icons.Filled.Replay, null, tint = tint, modifier = Modifier.fillMaxSize())
-        Text("15", color = tint, fontSize = (size.value * 0.24f).sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = size * 0.08f))
+        Icon(Icons.Filled.Replay, null, tint = tint, modifier = Modifier.fillMaxSize().graphicsLayer { if (forward) scaleX = -1f })
+        Text("$seconds", color = tint, fontSize = numSize, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = size * 0.09f))
     }
 }
 
 @Composable
-private fun Rewind15Button(tint: Color, size: Dp, iconSize: Dp, enabled: Boolean, onClick: () -> Unit) {
+private fun SkipButton(forward: Boolean, tint: Color, iconSize: Dp, enabled: Boolean, onClick: () -> Unit) {
+    val seconds = if (forward) 30 else 15
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(size.coerceAtLeast(Dims.touch)).clip(CircleShape)
-            .semantics { contentDescription = "后退 15 秒" }
+        modifier = Modifier.size((iconSize * 1.4f).coerceAtLeast(Dims.touch)).clip(CircleShape)
+            .semantics { contentDescription = if (forward) "前进 $seconds 秒" else "后退 $seconds 秒" }
             .pressable(enabled, pressedScale = 0.88f) { onClick() },
-    ) { Rewind15(if (enabled) tint else tint.copy(alpha = 0.3f), iconSize) }
+    ) { SkipIcon(seconds, forward, if (enabled) tint else tint.copy(alpha = 0.3f), iconSize) }
+}
+
+/** 实心播放键：整组控制里唯一的实心元素；缓冲时图标换成转圈 */
+@Composable
+private fun PlayFab(playing: Boolean, buffering: Boolean, enabled: Boolean, size: Dp, bg: Color, fg: Color, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(size.coerceAtLeast(Dims.touch))
+            .semantics { contentDescription = if (playing) "暂停" else "播放" }
+            .pressable(enabled, pressedScale = 0.9f) { onClick() },
+    ) {
+        Box(Modifier.size(size).clip(CircleShape).background(if (enabled) bg else bg.copy(alpha = 0.35f)))
+        androidx.compose.animation.Crossfade(if (buffering && enabled) null else playing, animationSpec = tween(200), label = "fab") { s ->
+            if (s == null) CircularProgressIndicator(Modifier.size(size * 0.4f), color = fg, strokeWidth = 3.dp)
+            else Icon(if (s) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = fg, modifier = Modifier.size(size * 0.5f))
+        }
+    }
 }
 
 // ---------------- 迷你播放条 ----------------
 
 /**
- * 底部迷你播放条（官方的白色悬浮卡片）：封面 / 标题 + 时间 / 后退 15 · 前进 30（宽屏）/ 带进度环的播放键 / 播放列表。
- * 点卡片展开全屏播放页。切换单集时封面和标题淡入淡出。
+ * 底部迷你播放条（官方的白色悬浮卡片）：后退 15 · 播放（实心）· 前进 30 | 封面 | 标题 / 时间 · 节目 | 播放列表；
+ * 底边一条细进度线（Android 车机「最小化控制栏」的做法），不再在播放键外画进度环。
+ * 控制组放在最左边：左舵车驾驶员离屏幕左侧最近。窄屏只留播放键。点卡片其余位置展开全屏播放页。
  */
 @Composable
 fun MiniPlayer(state: PlayerUi, queueSize: Int, a: PlayerActions, modifier: Modifier = Modifier) {
     val x = Xyz
     val ep = state.episode
+    val accent = MaterialTheme.colorScheme.primary
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val wide = maxWidth >= 760.dp
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
+        Box(
+            Modifier
                 .fillMaxWidth()
                 .height(Dims.miniPlayer)
                 .card(RoundedCornerShape(24.dp), x.card, x.shadow, x.border, 18.dp)
-                .pressable(enabled = ep != null, pressedScale = 0.985f) { a.expand() }
-                .padding(start = 14.dp, end = 10.dp),
+                .pressable(enabled = ep != null, pressedScale = 0.985f) { a.expand() },
         ) {
-            AnimatedContent(ep?.eid, transitionSpec = { (fadeIn(tween(300)) + scaleIn(initialScale = 0.9f)) togetherWith fadeOut(tween(200)) }, label = "miniCover") { _ ->
-                Cover(ep?.coverUrl.orEmpty(), 68.dp, title = ep?.podcastTitle.orEmpty(), color = ep?.color, radius = 10.dp)
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                AnimatedContent(ep?.title, transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) }, label = "miniTitle") { title ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(start = 8.dp, end = 10.dp)) {
+                if (wide) SkipButton(false, x.text, 44.dp, ep != null, a.back)
+                PlayFab(state.isPlaying, state.buffering, ep != null, 60.dp, accent, MaterialTheme.colorScheme.onPrimary, a.toggle)
+                if (wide) SkipButton(true, x.text, 44.dp, ep != null, a.forward)
+                Spacer(Modifier.width(if (wide) 14.dp else 10.dp))
+                AnimatedContent(ep?.eid, transitionSpec = { (fadeIn(tween(300)) + scaleIn(initialScale = 0.9f)) togetherWith fadeOut(tween(200)) }, label = "miniCover") { _ ->
+                    Cover(ep?.coverUrl.orEmpty(), 60.dp, title = ep?.podcastTitle.orEmpty(), color = ep?.color, radius = 10.dp)
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    AnimatedContent(ep?.title, transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) }, label = "miniTitle") { title ->
+                        Text(
+                            title ?: "还没有播放的单集", style = MaterialTheme.typography.titleSmall, color = if (title != null) x.text else x.sub,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     Text(
-                        title ?: "还没有播放的单集", style = MaterialTheme.typography.titleSmall, color = if (title != null) x.text else x.sub,
+                        when {
+                            ep == null -> "从推荐或订阅里选一集开始听"
+                            state.durationMs > 0 -> "${Fmt.clock(state.positionMs)} / ${Fmt.clock(state.durationMs)} · ${ep.podcastTitle}"
+                            else -> ep.podcastTitle
+                        },
+                        style = MaterialTheme.typography.bodyMedium.merge(NumberStyle).copy(fontWeight = FontWeight.Medium), color = x.sub,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Text(
-                    if (ep != null && state.durationMs > 0) "${Fmt.clock(state.positionMs)} / ${Fmt.clock(state.durationMs)}" else ep?.podcastTitle ?: "从推荐或订阅里选一集开始听",
-                    style = MaterialTheme.typography.bodyMedium.merge(NumberStyle).copy(fontWeight = FontWeight.Medium), color = x.sub, maxLines = 1,
-                )
+                Box {
+                    RoundIconButton(Icons.AutoMirrored.Filled.QueueMusic, "播放列表", plain = true, tint = x.text, onClick = a.openQueue)
+                    if (queueSize > 0) {
+                        Text(
+                            "$queueSize", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 6.dp).clip(CircleShape).background(x.accent).padding(horizontal = 7.dp, vertical = 1.dp),
+                        )
+                    }
+                }
             }
-            if (wide) {
-                Rewind15Button(x.text, Dims.touch, 44.dp, ep != null, a.back)
-                RoundIconButton(Icons.Filled.Forward30, "前进 30 秒", plain = true, enabled = ep != null, tint = x.text, onClick = a.forward)
-            }
-            Box(contentAlignment = Alignment.Center) {
-                PlayButton(
-                    playing = state.isPlaying,
-                    progress = if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else null,
-                    onClick = a.toggle, enabled = ep != null, size = 64.dp,
-                )
-                if (state.buffering) CircularProgressIndicator(Modifier.size(64.dp), color = x.accent, strokeWidth = 3.dp)
-            }
-            Box {
-                RoundIconButton(Icons.AutoMirrored.Filled.QueueMusic, "播放列表", plain = true, tint = x.text, onClick = a.openQueue)
-                if (queueSize > 0) {
-                    Text(
-                        "$queueSize", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 6.dp).clip(CircleShape).background(x.accent).padding(horizontal = 7.dp, vertical = 1.dp),
-                    )
+            if (ep != null && state.durationMs > 0) {
+                val p by animateFloatAsState((state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f), tween(450), label = "miniProgress")
+                val track = accent.copy(alpha = 0.28f)
+                Canvas(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 24.dp, vertical = 5.dp).height(3.dp)) {
+                    val r = CornerRadius(size.height / 2)
+                    drawRoundRect(track, cornerRadius = r)
+                    drawRoundRect(accent, size = Size(size.width * p, size.height), cornerRadius = r)
                 }
             }
         }
@@ -227,20 +261,24 @@ fun SeekBar(state: PlayerUi, accent: Color, track: Color, onSeek: (Long) -> Unit
     }
 }
 
+/** 播放页下方的次要操作：同一形状、同一高度、等宽；[active] 时用强调色（如定时已开） */
 @Composable
-private fun PillAction(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .heightIn(min = Dims.touch)
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color.White.copy(alpha = 0.1f))
-            .pressable { onClick() }
-            .padding(horizontal = 26.dp),
-    ) {
-        Icon(icon, null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(28.dp))
-        Spacer(Modifier.width(10.dp))
-        Text(text, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.labelLarge)
+private fun PillAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, accent: Color, stacked: Boolean,
+    modifier: Modifier = Modifier, active: Boolean = false, label: (@Composable (Color) -> Unit)? = null, onClick: () -> Unit,
+) {
+    val fg = if (active) accent else Color.White.copy(alpha = 0.9f)
+    val bg by animateColorAsState(if (active) accent.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.09f), label = "pillBg")
+    val content: @Composable () -> Unit = {
+        Icon(icon, null, tint = fg, modifier = Modifier.size(28.dp))
+        if (label != null) label(fg) else Text(text, color = fg, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    val m = modifier.heightIn(min = Dims.touch).clip(RoundedCornerShape(20.dp)).background(bg)
+        .semantics { contentDescription = text }.pressable { onClick() }
+    if (stacked) {
+        Column(m.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)) { content() }
+    } else {
+        Row(m.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)) { content() }
     }
 }
 
@@ -254,7 +292,7 @@ private fun WhiteIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, des
     }
 }
 
-/** 全屏播放页：横屏左封面右控制，竖屏 / 分屏上下排列。始终深色底，强调色取自节目封面 */
+/** 全屏播放页：横屏左控制右封面（控制靠驾驶位），竖屏 / 分屏上下排列。始终深色底，强调色取自节目封面 */
 @Composable
 fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifier: Modifier = Modifier) {
     val ep = state.episode
@@ -266,26 +304,37 @@ fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifi
             .pointerInput(Unit) { detectTapGestures { } }, // 吃掉点击，不穿透到下面的页面
     ) {
         val landscape = maxWidth > maxHeight * 1.15f && maxWidth >= 720.dp
-        val coverSize = if (landscape) min(maxHeight * 0.62f, maxWidth * 0.34f) else min(maxWidth * 0.62f, maxHeight * 0.34f)
+        // 竖排时高度够才把大封面放上面；分屏这类矮窗口改成小封面和标题并排，保证控制一屏放得下
+        val winHeight = maxHeight
+        val bigCover = landscape || maxHeight >= 860.dp
+        val coverSize = when {
+            landscape -> min(maxHeight * 0.62f, maxWidth * 0.34f)
+            bigCover -> min(maxWidth * 0.62f, maxHeight * 0.34f)
+            else -> 104.dp
+        }
         Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 16.dp)) {
             WhiteIcon(Icons.Filled.KeyboardArrowDown, "收起播放页", 72.dp, onClick = a.collapse)
             val cover = @Composable {
                 AnimatedContent(ep?.eid, transitionSpec = { (fadeIn(tween(400)) + scaleIn(initialScale = 0.92f)) togetherWith fadeOut(tween(250)) }, label = "bigCover") { _ ->
                     Box(Modifier.pressable(ep != null, pressedScale = 0.98f) { a.openEpisode() }) {
-                        Cover(ep?.coverUrl.orEmpty(), coverSize, title = ep?.podcastTitle.orEmpty(), color = ep?.color, radius = 20.dp)
+                        Cover(ep?.coverUrl.orEmpty(), coverSize, title = ep?.podcastTitle.orEmpty(), color = ep?.color, radius = if (bigCover) 20.dp else 14.dp)
                     }
                 }
             }
-            val controls = @Composable { m: Modifier -> PlayerControls(state, sleepMinutesLeft, accent, a, m) }
             if (landscape) {
                 Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(56.dp)) {
-                    Box(Modifier.padding(start = 16.dp)) { cover() }
-                    controls(Modifier.weight(1f))
+                    PlayerControls(state, sleepMinutesLeft, accent, a, Modifier.weight(1f))
+                    Box(Modifier.padding(end = 16.dp)) { cover() }
                 }
             } else {
-                Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically)) {
-                    cover()
-                    controls(Modifier.fillMaxWidth())
+                // 放得下时垂直居中；窗口特别矮（分屏缩成小窗）时可以上下滑，不会把按钮挤出屏幕
+                val viewport = winHeight - 32.dp - 72.dp
+                Column(
+                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = viewport),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
+                ) {
+                    if (bigCover) cover()
+                    PlayerControls(state, sleepMinutesLeft, accent, a, Modifier.fillMaxWidth(), inlineCover = if (bigCover) null else cover)
                 }
             }
         }
@@ -293,13 +342,29 @@ fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifi
 }
 
 @Composable
-private fun PlayerControls(state: PlayerUi, sleepMinutesLeft: Int?, accent: Color, a: PlayerActions, modifier: Modifier) {
+private fun PlayerControls(
+    state: PlayerUi, sleepMinutesLeft: Int?, accent: Color, a: PlayerActions, modifier: Modifier,
+    inlineCover: (@Composable () -> Unit)? = null,
+) {
     val ep = state.episode
     Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        AnimatedContent(ep?.title, transitionSpec = { fadeIn(tween(350)) togetherWith fadeOut(tween(200)) }, label = "bigTitle") { t ->
-            Text(t ?: "还没有播放的单集", color = Color.White, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        val titleBlock = @Composable {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AnimatedContent(ep?.title, transitionSpec = { fadeIn(tween(350)) togetherWith fadeOut(tween(200)) }, label = "bigTitle") { t ->
+                    Text(
+                        t ?: "还没有播放的单集", color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        style = if (inlineCover != null) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                    )
+                }
+                Text(ep?.podcastTitle.orEmpty(), color = accent, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
-        Text(ep?.podcastTitle.orEmpty(), color = accent, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (inlineCover != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                inlineCover()
+                Box(Modifier.weight(1f)) { titleBlock() }
+            }
+        } else titleBlock()
         Column {
             SeekBar(state, accent, Color.White.copy(alpha = 0.18f), a.seekTo)
             Row(Modifier.fillMaxWidth()) {
@@ -309,40 +374,36 @@ private fun PlayerControls(state: PlayerUi, sleepMinutesLeft: Int?, accent: Colo
                 Text(if (state.durationMs > 0) "-" + Fmt.clock(state.durationMs - state.positionMs) else "", style = num, color = Color.White.copy(alpha = 0.85f))
             }
         }
+        // 主控制：只有三个，后退 · 播放 · 前进，等距居中；播放键是唯一的实心元素
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val k = (maxWidth / 620.dp).coerceIn(0.72f, 1f)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(Dims.touch).clip(CircleShape).pressable(pressedScale = 0.88f) { a.cycleSpeed() },
-                ) {
-                    AnimatedContent(state.speed, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "speed") { s ->
-                        Text(speedText(s), color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.titleSmall.merge(NumberStyle))
-                    }
-                }
-                Rewind15Button(Color.White, 92.dp * k, 92.dp * k * 0.66f, ep != null, a.back)
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(128.dp * k).clip(CircleShape).background(Color.White.copy(alpha = 0.12f)).pressable(ep != null, pressedScale = 0.9f) { a.toggle() },
-                ) {
-                    androidx.compose.animation.Crossfade(state.isPlaying, animationSpec = tween(200), label = "bigPlay") { playing ->
-                        Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (playing) "暂停" else "播放", tint = Color.White, modifier = Modifier.size(80.dp * k))
-                    }
-                    if (state.buffering) CircularProgressIndicator(Modifier.size(128.dp * k), color = accent, strokeWidth = 4.dp)
-                }
-                WhiteIcon(Icons.Filled.Forward30, "前进 30 秒", 92.dp * k, ep != null, onClick = a.forward)
-                Box(contentAlignment = Alignment.Center) {
-                    WhiteIcon(Icons.Filled.Bedtime, if (sleepMinutesLeft != null) "定时关闭，剩 $sleepMinutesLeft 分钟" else "定时关闭", 72.dp, alpha = if (sleepMinutesLeft != null) 1f else 0.75f, onClick = a.cycleSleep)
-                    if (sleepMinutesLeft != null) {
-                        Text("$sleepMinutesLeft", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.align(Alignment.TopEnd).clip(CircleShape).background(accent).padding(horizontal = 6.dp))
-                    }
-                }
+            val k = (maxWidth / 560.dp).coerceIn(0.7f, 1f)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(40.dp * k, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                SkipButton(false, Color.White, 68.dp * k, ep != null, a.back)
+                PlayFab(state.isPlaying, state.buffering, ep != null, 120.dp * k, accent, Color(0xFF111217), a.toggle)
+                SkipButton(true, Color.White, 68.dp * k, ep != null, a.forward)
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)) {
-            PillAction(Icons.AutoMirrored.Filled.QueueMusic, "播放列表", a.openQueue)
-            if (ep != null) PillAction(Icons.Filled.Info, "单集简介", a.openEpisode)
+        // 次要操作：倍速、定时、播放列表、简介，同一种胶囊等宽排一行；窄时图标在上文字在下
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val stacked = maxWidth < 600.dp
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val w = Modifier.weight(1f)
+                PillAction(Icons.Filled.Speed, "倍速 ${speedText(state.speed)}", accent, stacked, w, active = state.speed != 1f,
+                    label = { c ->
+                        AnimatedContent(state.speed, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "speed") { s ->
+                            Text(speedText(s), color = c, style = MaterialTheme.typography.labelLarge.merge(NumberStyle), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }, onClick = a.cycleSpeed)
+                PillAction(Icons.Filled.Bedtime, if (sleepMinutesLeft != null) "定时关闭，剩 $sleepMinutesLeft 分钟" else "定时关闭", accent, stacked, w,
+                    active = sleepMinutesLeft != null,
+                    label = { c ->
+                        AnimatedContent(sleepMinutesLeft, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "sleep") { m ->
+                            Text(if (m != null) "剩 $m 分" else "定时", color = c, style = MaterialTheme.typography.labelLarge.merge(NumberStyle), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }, onClick = a.cycleSleep)
+                PillAction(Icons.AutoMirrored.Filled.QueueMusic, "播放列表", accent, stacked, w, onClick = a.openQueue)
+                if (ep != null) PillAction(Icons.Filled.Info, "简介", accent, stacked, w, onClick = a.openEpisode)
+            }
         }
     }
 }
