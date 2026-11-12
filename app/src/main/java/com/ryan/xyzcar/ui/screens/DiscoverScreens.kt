@@ -36,6 +36,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -171,18 +177,40 @@ fun DiscoverScreen(vm: AppViewModel) {
     }
 }
 
-/** 横向分页：每列 3 集，右侧露出下一列（官方「为你推荐」的样式），滑动会吸附到整列 */
+/**
+ * 横向分页：每列 3 集，一屏放整数列（宽屏 2 列、窄屏 1 列），滑动吸附到整列，下方圆点表示位置。
+ * 不再露出下一列的半截：播放键在行首，露出的那截只剩一排播放键，看着像每集有两个播放键。
+ */
 @Composable
 fun EpisodePager(eps: List<Episode>, playingEid: String?, isPlaying: Boolean, onOpen: (Episode) -> Unit, onPlay: (Episode) -> Unit) {
     val cols = eps.chunked(3)
     val state = rememberLazyListState()
+    val gap = 28.dp
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val colWidth = if (cols.size == 1) maxWidth else (maxWidth * 0.46f).coerceIn(440.dp, 640.dp)
-        LazyRow(state = state, flingBehavior = rememberSnapFlingBehavior(state), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-            items(cols) { col ->
-                Column(Modifier.width(colWidth)) {
-                    col.forEach { ep ->
-                        EpisodeRow(ep, onOpen = { onOpen(ep) }, onPlay = { onPlay(ep) }, playing = isPlaying && playingEid == ep.eid)
+        val perScreen = if (maxWidth >= 880.dp) 2 else 1
+        val colWidth = (maxWidth - gap * (perScreen - 1)) / perScreen
+        Column {
+            LazyRow(state = state, flingBehavior = rememberSnapFlingBehavior(state), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                items(cols) { col ->
+                    Column(Modifier.width(colWidth)) {
+                        col.forEach { ep ->
+                            EpisodeRow(ep, onOpen = { onOpen(ep) }, onPlay = { onPlay(ep) }, playing = isPlaying && playingEid == ep.eid)
+                        }
+                    }
+                }
+            }
+            val pages = (cols.size - perScreen + 1).coerceAtLeast(1)
+            if (pages > 1) {
+                val current by remember { derivedStateOf { if (state.canScrollForward) state.firstVisibleItemIndex else pages - 1 } }
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                ) {
+                    repeat(pages) { i ->
+                        val on = i == current
+                        val w by animateDpAsState(if (on) 22.dp else 8.dp, label = "dotW")
+                        val c by animateColorAsState(if (on) Xyz.accent else Xyz.border, label = "dotC")
+                        Box(Modifier.width(w).height(8.dp).clip(CircleShape).background(c))
                     }
                 }
             }
