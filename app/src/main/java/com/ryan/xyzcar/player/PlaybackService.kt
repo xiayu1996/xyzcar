@@ -183,20 +183,20 @@ class PlaybackService : MediaSessionService() {
         // 排查用：记下哪些系统组件（媒体卡片、小迪、方控）连了播放服务、发了什么按键
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
             if (controller.packageName != packageName) {
-                com.ryan.xyzcar.data.DebugLog.log("media", "控制器连接：${controller.packageName} uid=${controller.uid} 版本=${controller.controllerVersion} 受信任=${controller.isTrusted}")
+                com.ryan.xyzcar.data.DebugLog.kv("media", "controller_connect", "pkg" to controller.packageName, "uid" to controller.uid, "version" to controller.controllerVersion, "trusted" to controller.isTrusted)
             }
             return super.onConnect(session, controller)
         }
 
         override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
-            if (controller.packageName != packageName) com.ryan.xyzcar.data.DebugLog.log("media", "控制器断开：${controller.packageName}")
+            if (controller.packageName != packageName) com.ryan.xyzcar.data.DebugLog.kv("media", "controller_disconnect", "pkg" to controller.packageName)
         }
 
         override fun onMediaButtonEvent(session: MediaSession, controllerInfo: MediaSession.ControllerInfo, intent: android.content.Intent): Boolean {
             val key = runCatching {
                 androidx.core.content.IntentCompat.getParcelableExtra(intent, android.content.Intent.EXTRA_KEY_EVENT, android.view.KeyEvent::class.java)
             }.getOrNull()
-            com.ryan.xyzcar.data.DebugLog.log("media", "媒体按键：来自 ${controllerInfo.packageName} key=${key?.keyCode} action=${key?.action}")
+            com.ryan.xyzcar.data.DebugLog.kv("media", "media_button", "from" to controllerInfo.packageName, "key" to key?.keyCode, "action" to key?.action)
             return super.onMediaButtonEvent(session, controllerInfo, intent)
         }
 
@@ -213,7 +213,7 @@ class PlaybackService : MediaSessionService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
-            com.ryan.xyzcar.data.DebugLog.log("media", "继续播放请求：来自 ${controller.packageName}")
+            com.ryan.xyzcar.data.DebugLog.kv("media", "playback_resumption", "from" to controller.packageName)
             val last = App.instance.local.lastPlayed
                 ?: return Futures.immediateFailedFuture(UnsupportedOperationException("no last played"))
             return Futures.immediateFuture(

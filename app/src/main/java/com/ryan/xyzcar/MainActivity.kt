@@ -33,17 +33,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: android.content.res.Configuration) {
         super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
-        DebugLog.log("window", "分屏状态变化 → $isInMultiWindowMode；${CarLab.window(this)}")
+        DebugLog.log("window", "multi_window_changed ${CarLab.window(this)}")
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        DebugLog.log("window", "配置变化；${CarLab.window(this)}")
+        DebugLog.log("window", "config_changed ${CarLab.window(this)}")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        DebugLog.log("launch", CarLab.describe(this, intent, if (savedInstanceState == null) "onCreate" else "onCreate(重建)"))
+        DebugLog.log("launch", CarLab.describe(this, intent, if (savedInstanceState == null) "onCreate" else "onCreate_recreated"))
         enableEdgeToEdge()
         if (BuildConfig.DEBUG && (intent.getBooleanExtra("demo", false) || inTestLab())) vm.enableDemo()
         if (Build.VERSION.SDK_INT >= 33) {

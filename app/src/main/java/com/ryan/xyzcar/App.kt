@@ -42,7 +42,7 @@ class App : Application() {
         // 车机快照和实验开关：后台线程，失败只写日志
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching { CarLab.onAppStart(this@App, local, BuildConfigInfo.VERSION) }
-                .onFailure { DebugLog.log("start", "启动快照出错：${it.javaClass.simpleName} ${it.message.orEmpty()}") }
+                .onFailure { DebugLog.kv("start", "snapshot_error", "error" to "${it.javaClass.simpleName}:${it.message.orEmpty()}") }
         }
     }
 
