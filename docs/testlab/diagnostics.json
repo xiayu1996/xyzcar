@@ -2,5 +2,13 @@
   {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "我的"}]},
   {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 2000},
   {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "车机信息"}]},
-  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 5000}
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 5000},
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "保存报告文件"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 6000},
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "手机扫码下载"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 6000},
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "关闭"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 2000},
+  {"eventType": "VIEW_CLICKED", "elementDescriptors": [{"text": "导出媒体中心安装包"}]},
+  {"eventType": "DELAYED_MESSAGE_POSTED", "delayTime": 8000}
 ]

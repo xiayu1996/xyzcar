@@ -56,9 +56,9 @@ private const val QR_WAIT_MS = 180_000L
 private const val POLL_MS = 1_000L
 
 /** 二维码矩阵：每个模块 1 格，四周留 2 格白边。纯 Java，界面和登录验证工具共用 */
-fun qrMatrix(text: String): BitMatrix = QRCodeWriter().encode(
+fun qrMatrix(text: String, ecc: ErrorCorrectionLevel = ErrorCorrectionLevel.M, margin: Int = 2): BitMatrix = QRCodeWriter().encode(
     text, BarcodeFormat.QR_CODE, 0, 0,
-    mapOf(EncodeHintType.MARGIN to 2, EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M),
+    mapOf(EncodeHintType.MARGIN to margin, EncodeHintType.ERROR_CORRECTION to ecc),
 )
 
 /** F1 登录：扫码登录（短信验证码接口要求人机验证，第三方客户端用不了） */
