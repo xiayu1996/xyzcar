@@ -1,5 +1,5 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>小宇宙车机版 0.0.2 界面</title><style>
+<title>小宇宙车机版界面</title><style>
 :root{--bg:#f5f4f2;--fg:#161517;--muted:rgba(60,60,67,.6);--card:#fff}
 @media (prefers-color-scheme:dark){:root{--bg:#0b0b0c;--fg:#f2f2f2;--muted:rgba(235,235,245,.6);--card:#161618}}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"PingFang SC",sans-serif}
@@ -8,7 +8,7 @@ main{max-width:1400px;margin:0 auto;padding:24px 16px}h1{font-size:24px;margin:0
 figure{margin:0;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 5px 40px rgba(0,0,0,.08)}
 img{width:100%;display:block;background:#000}figcaption{padding:10px 14px}figcaption b{display:block}figcaption span{color:var(--muted);font-size:13px}
 @media (max-width:480px){.grid{grid-template-columns:1fr}}
-</style></head><body><main><h1>小宇宙车机版 0.0.2 · 界面截图</h1>
+</style></head><body><main><h1>小宇宙车机版 · 界面截图</h1>
 <p>本地渲染（Paparazzi，不需要模拟器），用真实公开内容和真实封面。车机横屏按 1280×720dp 渲染。这些图是用 App 的同一套组件拼出的页面，不是运行中 App 的截屏；转场动画只能在真机上看。</p>
 <div class="grid"><figure><img src="discoverLight.png" loading="lazy" alt="发现"><figcaption><b>发现</b><span>浅色。搜索条、入口色块（分类 / 榜单 / 编辑精选）、「为你推荐」横向分页，可换一批</span></figcaption></figure>
 <figure><img src="discoverDark.png" loading="lazy" alt="发现 · 深色"><figcaption><b>发现 · 深色</b><span>深色模式；切换外观时颜色渐变过渡</span></figcaption></figure>
@@ -18,9 +18,13 @@ img{width:100%;display:block;background:#000}figcaption{padding:10px 14px}figcap
 <figure><img src="updatesDarkLargest.png" loading="lazy" alt="订阅 · 深色 · 特大"><figcaption><b>订阅 · 深色 · 特大</b><span>显示大小调到「特大」时不裁切</span></figcaption></figure>
 <figure><img src="searchResultsLight.png" loading="lazy" alt="搜索结果"><figcaption><b>搜索结果</b><span>左边相关节目、右边单集，关键词高亮；付费单集置灰</span></figcaption></figure>
 <figure><img src="meLight.png" loading="lazy" alt="我的"><figcaption><b>我的</b><span>账号、收听历史、车机信息、关于；外观三选一、显示大小刻度滑杆</span></figcaption></figure>
-<figure><img src="playerFull.png" loading="lazy" alt="全屏播放页"><figcaption><b>全屏播放页</b><span>点迷你播放条从底部滑出；进度条可点可拖，倍速、定时关闭</span></figcaption></figure>
+<figure><img src="meFullPage.png" loading="lazy" alt="我的 · 整页"><figcaption><b>我的 · 整页</b><span>左栏账号与菜单，右栏外观、显示大小、车机测试</span></figcaption></figure>
+<figure><img src="diagnosticsFullPage.png" loading="lazy" alt="车机信息 · 整页"><figcaption><b>车机信息 · 整页</b><span>导出按钮 + 几行摘要；原始数据只进导出的报告</span></figcaption></figure>
+<figure><img src="playerFull.png" loading="lazy" alt="全屏播放页"><figcaption><b>全屏播放页</b><span>点迷你播放条从底部滑出；后退 · 播放 · 前进居中，倍速 / 定时 / 播放列表 / 简介同形胶囊；进度条可点可拖</span></figcaption></figure>
+<figure><img src="playerSplit.png" loading="lazy" alt="播放页 · 分屏 1/2"><figcaption><b>播放页 · 分屏 1/2</b><span>封面在上、控制在下</span></figcaption></figure>
+<figure><img src="playerNarrow.png" loading="lazy" alt="播放页 · 分屏 1/3"><figcaption><b>播放页 · 分屏 1/3</b><span>次要操作图标在上文字在下</span></figcaption></figure>
 <figure><img src="narrowSplitLight.png" loading="lazy" alt="分屏 1/3"><figcaption><b>分屏 1/3</b><span>窄屏时改用底部导航</span></figcaption></figure>
-<figure><img src="queueLight.png" loading="lazy" alt="播放列表"><figcaption><b>播放列表</b><span>上移 / 下移 / 移除</span></figcaption></figure>
+<figure><img src="queueLight.png" loading="lazy" alt="播放列表"><figcaption><b>播放列表</b><span>移到最前 / 移出</span></figcaption></figure>
 <figure><img src="queueLightLargest.png" loading="lazy" alt="播放列表 · 特大"><figcaption><b>播放列表 · 特大</b><span>按钮换到第二行，标题不被挤</span></figcaption></figure>
 <figure><img src="loginLight.png" loading="lazy" alt="登录 · 等待扫码"><figcaption><b>登录 · 等待扫码</b><span>横屏浅色</span></figcaption></figure>
 <figure><img src="loginDarkScannedPortrait.png" loading="lazy" alt="登录 · 已扫码"><figcaption><b>登录 · 已扫码</b><span>竖屏深色</span></figcaption></figure></div></main></body></html>

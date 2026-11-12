@@ -22,6 +22,9 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -279,9 +282,67 @@ class UiSnapshots {
         shot { XyzCarTheme(ThemeMode.Light) { Landscape(Tab.Me) { Me() } } }
     }
 
+    /** 竖长画布：把整页从头到尾渲染出来（不滚动），给人检查内容多不多 */
+    private fun tall(heightPx: Int) = DeviceConfig.PIXEL_C.copy(
+        screenWidth = 1920, screenHeight = heightPx, xdpi = 240, ydpi = 240,
+        density = ResDensity.HIGH, softButtons = false, orientation = ScreenOrientation.PORTRAIT, nightMode = NightMode.NOTNIGHT,
+    )
+
+    /** 「我的」整页：和 MeScreen 同样的行与设置，右栏含车机实验功能 */
+    @Test fun meFullPage() {
+        paparazzi.unsafeUpdateConfig(tall(2100))
+        val store = com.ryan.xyzcar.data.LocalStore(paparazzi.context)
+        shot { XyzCarTheme(ThemeMode.Light) { androidx.compose.material3.Surface(color = Xyz.bg, contentColor = Xyz.text) {
+            Row(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(48.dp)) {
+                Column(Modifier.width(520.dp)) {
+                    Text("演示账号", style = MaterialTheme.typography.headlineLarge, color = Xyz.text)
+                    Text("小宇宙账号 · 已登录", style = MaterialTheme.typography.bodyMedium, color = Xyz.sub)
+                    Spacer(Modifier.height(16.dp))
+                    MenuRow(Icons.Filled.History, "收听历史") {}
+                    MenuRow(Icons.AutoMirrored.Filled.QueueMusic, "播放列表") {}
+                    MenuRow(Icons.Filled.DirectionsCar, "车机信息", "分屏、语音排查用") {}
+                    MenuRow(Icons.Filled.SystemUpdate, "检查更新", "当前 v0.0.4") {}
+                    MenuRow(Icons.AutoMirrored.Filled.Logout, "退出登录") {}
+                    InfoRow("版本", "v0.0.4")
+                    InfoRow("源码地址", "github.com/xiayu1996/xyzcar", link = true) {}
+                    InfoRow("许可协议", "PolyForm 非商用 1.0.0")
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("外观", style = MaterialTheme.typography.titleLarge, color = Xyz.text, modifier = Modifier.padding(bottom = 14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                        ThemeMode.entries.forEach { m -> ThemeCard(m, m == ThemeMode.System, Modifier.weight(1f)) {} }
+                    }
+                    Text("显示大小", style = MaterialTheme.typography.titleLarge, color = Xyz.text, modifier = Modifier.padding(top = 36.dp))
+                    TickSlider(2, com.ryan.xyzcar.data.SIZE_LABELS) {}
+                    com.ryan.xyzcar.ui.screens.CarLabSection(store)
+                }
+            }
+        } } }
+    }
+
+    /** 「车机信息」整页（模拟器上读不到比亚迪的东西，车上会多出小迪 / 分屏 / 媒体中心几段） */
+    @Test fun diagnosticsFullPage() {
+        paparazzi.unsafeUpdateConfig(tall(1300))
+        shot { XyzCarTheme(ThemeMode.Light) { androidx.compose.material3.Surface(color = Xyz.bg, contentColor = Xyz.text) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 16.dp)) { com.ryan.xyzcar.ui.screens.DiagnosticsScreen(onBack = {}) }
+        } } }
+    }
+
     @Test fun playerFull() {
         paparazzi.unsafeUpdateConfig(config(night = false))
         shot { XyzCarTheme(ThemeMode.Light) { FullPlayer(playing, 15, noop) } }
+    }
+
+    /** 分屏 1/2 的全屏播放页：上下排列 */
+    @Test fun playerSplit() {
+        paparazzi.unsafeUpdateConfig(config(night = false, widthPx = 960))
+        shot { XyzCarTheme(ThemeMode.Light) { FullPlayer(playing, 15, noop) } }
+    }
+
+    /** 分屏 1/3 的全屏播放页：次要操作图标在上文字在下 */
+    @Test fun playerNarrow() {
+        paparazzi.unsafeUpdateConfig(config(night = false, widthPx = 630))
+        shot { XyzCarTheme(ThemeMode.Light) { FullPlayer(playing, null, noop) } }
     }
 
     /** 分屏 1/3：底部导航 + 窄迷你播放条 */
@@ -321,7 +382,7 @@ class UiSnapshots {
         val q = DemoData.episodes.take(4)
         ScreenHeader("播放列表", {}) { BigButton("清空", secondary = true) {} }
         LazyColumn {
-            items(q.size) { i -> QueueRow(q[i], i == 0, i == q.lastIndex, {}, {}, {}, {}, {}) }
+            items(q.size) { i -> QueueRow(q[i], i == 0, {}, {}, {}, {}) }
         }
     }
 
