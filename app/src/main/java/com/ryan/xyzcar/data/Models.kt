@@ -45,6 +45,9 @@ data class Episode(
     val finished: Boolean = false,
 )
 
+/** 未听或在听（没听完）：「订阅」页的筛选和自动续播共用 */
+fun Episode.isTodo(): Boolean = !finished && !(durationSec > 0 && progressSec >= durationSec - 30)
+
 /** 当前账号：只取昵称和头像（接口还返回手机号等，一律不解析、不保存） */
 @Serializable
 data class User(

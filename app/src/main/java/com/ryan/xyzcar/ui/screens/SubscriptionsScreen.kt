@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ryan.xyzcar.data.Episode
+import com.ryan.xyzcar.data.isTodo
 import com.ryan.xyzcar.data.Page
 import com.ryan.xyzcar.data.Podcast
 import com.ryan.xyzcar.ui.AppViewModel
@@ -60,7 +61,6 @@ import com.ryan.xyzcar.ui.theme.Dims
 import com.ryan.xyzcar.ui.theme.Xyz
 
 /** 「未听 + 在听」：没听完的单集（服务端标记已听完、或进度到最后 30 秒的算听完） */
-fun Episode.isTodo(): Boolean = !finished && !(durationSec > 0 && progressSec >= durationSec - 30)
 
 private class SubsState {
     var todoOnly by mutableStateOf(true)

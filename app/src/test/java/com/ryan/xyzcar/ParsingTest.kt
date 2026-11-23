@@ -4,7 +4,7 @@ import com.ryan.xyzcar.data.api.XyzParser
 import com.ryan.xyzcar.player.PlayerConnection
 import com.ryan.xyzcar.ui.Fmt
 import com.ryan.xyzcar.ui.ShownotesParser
-import com.ryan.xyzcar.ui.screens.isTodo
+import com.ryan.xyzcar.data.isTodo
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
