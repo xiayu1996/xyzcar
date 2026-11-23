@@ -137,6 +137,24 @@ class PlayerConnection(private val context: Context) {
         }
     }
 
+    /** 自动续播提示条：「不要自动播」→ 这一集播完就停 */
+    fun cancelAutoNext(afterEid: String) {
+        AutoNext.cancelledAfter.value = afterEid
+        AutoNext.plan.value = null
+    }
+
+    /** 自动续播提示条：「换一集」 */
+    fun swapAutoNext() { PlaybackService.current?.swapAuto(); refresh() }
+
+    /** 切换账号后：面板换成新账号上次播放的单集，再对齐服务端 */
+    fun reloadAccount() {
+        _state.value = app.local.lastPlayed?.let {
+            PlayerUi(episode = it.episode, positionMs = it.positionMs, durationMs = it.episode.durationSec * 1000L, speed = app.local.speed, connected = controller != null)
+        } ?: PlayerUi(speed = app.local.speed, connected = controller != null)
+        sleepJob?.cancel(); sleepEndsAt.value = null
+        scope.launch { delay(300); refresh(); syncWithServer() }
+    }
+
     /** 回到前台：如果没在播放，对齐服务端进度（手机上可能听过） */
     fun onForeground() {
         scope.launch {

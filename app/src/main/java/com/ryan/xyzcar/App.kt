@@ -29,7 +29,7 @@ class App : Application() {
         super.onCreate()
         instance = this
         tokens = TokenStore(this)
-        local = LocalStore(this)
+        local = LocalStore(this) { tokens.activeId }
         api = XyzApi(tokens)
         repo = Repository(api, local, tokens)
         updater = Updater(

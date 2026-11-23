@@ -56,7 +56,10 @@ class MainActivity : ComponentActivity() {
                     color = androidx.compose.material3.MaterialTheme.colorScheme.background,
                     contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
                 ) {
-                    if (vm.loggedIn) MainLayout(vm) else LoginScreen(vm)
+                    // 登录页 ↔ 主界面（含切换 / 添加账号）淡入淡出
+                    androidx.compose.animation.Crossfade(vm.loggedIn, animationSpec = androidx.compose.animation.core.tween(300), label = "auth") { inApp ->
+                        if (inApp) MainLayout(vm) else LoginScreen(vm)
+                    }
                 }
             }
         }

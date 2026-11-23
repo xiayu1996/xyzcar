@@ -285,10 +285,90 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun onLoggedIn() {
-        loggedIn = true
+    // ---------- 账号 ----------
+
+    /** 账号列表（「我的」里显示），切换 / 添加 / 退出后刷新 */
+    var accounts by mutableStateOf(repo.accounts())
+        private set
+    val accountId: String? get() = repo.accountId
+
+    /** 添加账号时原来的账号；登录页据此显示「取消」 */
+    var addingFrom by mutableStateOf<String?>(null)
+        private set
+
+    private var switching: Job? = null
+
+    init {
+        // 迁移来的账号还没有 uid / 昵称：启动时取一次，账号列表能显示名字，过期后重新扫码也能并回原账号
+        if (loggedIn && repo.accounts().any { it.id == repo.accountId && it.uid.isEmpty() }) viewModelScope.launch {
+            runCatching { repo.profile() }
+            refreshAccounts()
+        }
+    }
+
+    /** 换账号：旧账号停播并保存 → 切换 → 清掉页面状态 → 载入新账号的续播点和播放列表 */
+    private fun changeAccount(id: String?, after: () -> Unit = {}) {
+        if (switching?.isActive == true) return
+        switching = viewModelScope.launch {
+            com.ryan.xyzcar.player.PlaybackService.current?.detachAccount()
+            repo.switchAccount(id)
+            enterAccount()
+            after()
+        }
+    }
+
+    private fun enterAccount() {
         holders.clear()
-        selectTab(Tab.Subscriptions)
+        playerExpanded = false
+        stack.clear(); stack.add(Route.Home(Tab.Subscriptions))
+        accounts = repo.accounts()
+        loggedIn = repo.isLoggedIn
+        if (loggedIn) {
+            com.ryan.xyzcar.player.PlaybackService.current?.attachAccount()
+            player.reloadAccount()
+        }
+        bumpQueue()
+    }
+
+    fun refreshAccounts() { accounts = repo.accounts() }
+
+    /** 简介里的小宇宙链接 */
+    fun openPodcast(pid: String) { playerExpanded = false; push(Route.PodcastDetail(pid)) }
+
+    fun openEpisodeById(eid: String) {
+        viewModelScope.launch {
+            runCatching { repo.episode(eid) }
+                .onSuccess { playerExpanded = false; push(Route.EpisodeDetail(it)) }
+                .onFailure { player.messages.value = "打不开这一集：${errorText(it)}" }
+        }
+    }
+
+    fun switchAccount(id: String) {
+        if (id == repo.accountId) return
+        val target = accounts.firstOrNull { it.id == id } ?: return
+        if (!target.loggedIn) { addAccount(); return } // 登录已过期：重新扫码，同一个人会并回原账号
+        changeAccount(id) { player.messages.value = "已切换到「${target.nickname.ifEmpty { "小宇宙账号" }}」" }
+    }
+
+    /** 添加账号：暂时离开当前账号，去扫码；登录页可以取消回来 */
+    fun addAccount() {
+        if (repo.demo) return
+        val from = repo.accountId?.takeIf { repo.isLoggedIn }
+        changeAccount(null) { addingFrom = from }
+    }
+
+    fun cancelAddAccount() {
+        val from = addingFrom ?: return
+        addingFrom = null
+        changeAccount(from)
+    }
+
+    fun onLoggedIn() {
+        viewModelScope.launch {
+            repo.finishLogin()?.let { DebugLog.kv("auth", "profile_after_login_failed", "error" to it.javaClass.simpleName) }
+            addingFrom = null
+            enterAccount()
+        }
     }
 
     fun enableDemo() {
@@ -306,13 +386,33 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         loggedIn = true
     }
 
+    /**
+     * 当前账号登录过期（刷新接口 401，token 已作废）：有其他可用账号就切过去并提示；没有就回登录页。
+     * 过期的账号留在列表里，重新扫码后并回原账号。别的账号过期、或者正在添加账号时不处理
+     */
     fun onAuthExpired() {
-        if (repo.demo) return
-        repo.logout()
-        loggedIn = false
+        if (repo.demo || !loggedIn || repo.isLoggedIn || addingFrom != null || switching?.isActive == true) return
+        val expired = accounts.firstOrNull { it.id == repo.accountId }
+        val next = repo.accounts().firstOrNull { it.loggedIn }
+        changeAccount(next?.id) {
+            if (next != null) player.messages.value = "「${expired?.nickname?.ifEmpty { null } ?: "原账号"}」登录已过期，已切换到「${next.nickname.ifEmpty { "小宇宙账号" }}」"
+        }
     }
 
-    fun logout() = onAuthExpired()
+    /** 退出当前账号：删掉它和它的本地数据；还有别的账号就切过去，否则回登录页 */
+    fun logout() {
+        if (repo.demo) return
+        val id = repo.accountId ?: return
+        if (switching?.isActive == true) return
+        switching = viewModelScope.launch {
+            com.ryan.xyzcar.player.PlaybackService.current?.detachAccount()
+            runCatching { repo.flushPendingProgress() }
+            repo.removeAccount(id)
+            val next = repo.accounts().firstOrNull { it.loggedIn }
+            repo.switchAccount(next?.id)
+            enterAccount()
+        }
+    }
 
     override fun onCleared() {
         player.release()

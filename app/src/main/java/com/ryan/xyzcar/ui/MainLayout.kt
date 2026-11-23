@@ -65,6 +65,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ryan.xyzcar.ui.components.FullPlayer
 import com.ryan.xyzcar.ui.components.MiniPlayer
+import com.ryan.xyzcar.ui.components.AutoNextBanner
+import androidx.compose.foundation.layout.widthIn
 import com.ryan.xyzcar.ui.components.PlayerActions
 import com.ryan.xyzcar.ui.components.pressable
 import com.ryan.xyzcar.ui.screens.ContentArea
@@ -132,6 +134,7 @@ fun MainLayout(vm: AppViewModel) {
         if (narrow) {
             Column(Modifier.fillMaxSize()) {
                 contentWithSnackbar(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp))
+                AutoNextBanner(ps, queueSize, vm.player::cancelAutoNext, vm.player::swapAutoNext, Modifier.padding(horizontal = 12.dp))
                 MiniPlayer(ps, queueSize, actions, Modifier.padding(horizontal = 12.dp))
                 BottomNav(vm.currentTab, vm::selectTab)
             }
@@ -141,6 +144,7 @@ fun MainLayout(vm: AppViewModel) {
                 Column(Modifier.weight(1f).fillMaxHeight().padding(end = 24.dp, bottom = 16.dp)) {
                     contentWithSnackbar(Modifier.weight(1f).fillMaxWidth().padding(start = 8.dp, top = 12.dp))
                     Spacer(Modifier.height(12.dp))
+                    AutoNextBanner(ps, queueSize, vm.player::cancelAutoNext, vm.player::swapAutoNext)
                     MiniPlayer(ps, queueSize, actions)
                 }
             }
@@ -158,7 +162,14 @@ fun MainLayout(vm: AppViewModel) {
                     kotlinx.coroutines.delay(10_000)
                 }
             }
-            FullPlayer(ps, left, actions)
+            Box(Modifier.fillMaxSize()) {
+                FullPlayer(ps, left, actions)
+                AutoNextBanner(
+                    ps, queueSize, vm.player::cancelAutoNext, vm.player::swapAutoNext,
+                    // 让开左上角的「收起」按钮（播放页左右边距 32 + 按钮 72）
+                    Modifier.align(Alignment.TopCenter).padding(start = 120.dp, end = 32.dp, top = 16.dp).widthIn(max = 720.dp),
+                )
+            }
         }
     }
 }

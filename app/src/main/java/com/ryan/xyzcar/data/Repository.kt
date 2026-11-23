@@ -42,6 +42,44 @@ class Repository(
 
     val isLoggedIn get() = tokens.isLoggedIn
 
+    // ---------- 多账号 ----------
+
+    val accountId: String? get() = tokens.activeId
+    fun accounts(): List<Account> = tokens.accounts()
+
+    /**
+     * 切到 [id]（null = 暂时没有当前账号，用于添加账号的登录页）。
+     * 和进度上报、token 刷新互斥：切换前发出的上报和刷新都落在旧账号上。只改当前槽位，不刷新 token
+     */
+    suspend fun switchAccount(id: String?) {
+        progressLock.withLock { api.withAuthLock { tokens.activate(id) } }
+        memCache.clear()
+        profileCache = null
+    }
+
+    /** 删除账号和它的本地数据（播放列表、续播点、待补发进度）。删的是当前账号时，之后没有当前账号 */
+    suspend fun removeAccount(id: String) {
+        progressLock.withLock { api.withAuthLock { tokens.remove(id) } }
+        local.dropAccount(id)
+        memCache.clear()
+        profileCache = null
+    }
+
+    /** 扫码登录成功后：取资料写进槽位；同一个人已经在列表里就并回原槽位。返回失败原因，成功返回 null */
+    suspend fun finishLogin(): Throwable? {
+        val id = tokens.activeId ?: return null
+        val user = runCatching { api.profile() }.getOrElse { return it }
+        progressLock.withLock {
+            api.withAuthLock {
+                tokens.setProfile(id, user)
+                tokens.mergeDuplicate(id)
+            }
+        }
+        memCache.clear()
+        profileCache = user
+        return null
+    }
+
     fun logout() {
         tokens.clear()
         memCache.clear()
@@ -123,9 +161,15 @@ class Repository(
 
     private val playedAtFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
 
-    suspend fun reportProgress(ep: Episode, progressSec: Int) = progressLock.withLock {
-        if (ep.pid.isEmpty() || progressSec < 0) return@withLock
+    /** [account]：调用方在拿到进度的那一刻记下的账号；已经切走了就先记在那个账号名下，切回来再补发 */
+    suspend fun reportProgress(ep: Episode, progressSec: Int, account: String? = tokens.activeId) = progressLock.withLock {
+        if (ep.pid.isEmpty() || progressSec < 0 || account == null) return@withLock
         val item = PendingProgress(ep.eid, ep.pid, progressSec, playedAtFmt.format(Instant.now()))
+        if (account != tokens.activeId) {
+            if (account !in tokens.ids) return@withLock // 账号已删除
+            local.setPendingProgressOf(account, (local.pendingProgressOf(account).filter { it.eid != ep.eid } + item).takeLast(50))
+            return@withLock
+        }
         val batch = (local.pendingProgress.filter { it.eid != ep.eid } + item).takeLast(50)
         try {
             api.updateProgress(batch)
@@ -155,7 +199,14 @@ class Repository(
     @Volatile private var profileCache: User? = null
 
     /** 昵称和头像：每次启动只请求一次 */
-    suspend fun profile(): User = profileCache ?: (if (demo) User("demo", "演示账号") else api.profile()).also { profileCache = it }
+    suspend fun profile(): User {
+        profileCache?.let { return it }
+        if (demo) return User("demo", "演示账号").also { profileCache = it }
+        val id = tokens.activeId
+        return api.profile().also { u ->
+            if (id != null && id == tokens.activeId) { profileCache = u; tokens.setProfile(id, u) }
+        }
+    }
 
     // ---------- 历史 ----------
 
@@ -221,6 +272,49 @@ class Repository(
     suspend fun searchPresets(): List<String> = if (demo) DemoData.searchPresets else cached("presets", false) { api.searchPresets() }
     val recentSearches: List<String> get() = local.recentSearches
     fun clearRecentSearches() { local.recentSearches = emptyList() }
+
+    // ---------- 自动续播 ----------
+
+    /**
+     * 选下一集（规则见 [NextPicker]）。三类数据分别取，哪类失败就当没有；全失败（断网）返回 null，自动续播就停下。
+     * 都直接走接口、不用缓存：刚听完的进度可能还没上报完，靠 [exclude] 排除
+     */
+    suspend fun pickNext(finished: Episode, exclude: Set<String>): NextPicker.Pick? {
+        if (demo) return DemoData.allEpisodes().firstOrNull { it.eid != finished.eid && it.eid !in exclude }?.let { NextPicker.Pick(it, NextPicker.Reason.InProgress) }
+        val sameShow = runCatching { neighborsInShow(finished) }.getOrDefault(emptyList())
+        val history = runCatching {
+            val eps = api.history(null).items
+            val prog = api.progressWithTime(eps.map { it.eid })
+            eps.mapNotNull { e ->
+                val (sec, at) = prog[e.eid] ?: return@mapNotNull null
+                NextPicker.parseTime(at)?.let { NextPicker.Played(e.copy(progressSec = sec), it) }
+            }
+        }.getOrDefault(emptyList())
+        val fresh = if (!local.autoFresh) emptyList() else runCatching { withProgress(api.inbox(null).items) }.getOrDefault(emptyList())
+        return NextPicker.choose(
+            finished, sameShow, history, fresh, System.currentTimeMillis(),
+            local.autoRejected.toSet(), exclude, local.autoFresh,
+        )
+    }
+
+    /** 同一节目里刚听完那集和比它新的一集（最新在前，带进度）；最多翻 5 页找它 */
+    private suspend fun neighborsInShow(ep: Episode): List<Episode> {
+        if (ep.pid.isEmpty()) return emptyList()
+        var key: JsonElement? = null
+        var prev: Episode? = null
+        repeat(5) {
+            val page = api.episodes(ep.pid, key)
+            val list = listOfNotNull(prev) + page.items
+            val i = list.indexOfFirst { it.eid == ep.eid }
+            if (i == 0) return list.take(1)
+            if (i > 0) return withProgress(list.subList(i - 1, i + 1))
+            prev = page.items.lastOrNull()
+            key = page.loadMoreKey ?: return emptyList()
+        }
+        return emptyList()
+    }
+
+    fun rejectAuto(eid: String) { local.autoRejected = local.autoRejected.filter { it != eid } + eid }
 
     // ---------- 队列 ----------
 

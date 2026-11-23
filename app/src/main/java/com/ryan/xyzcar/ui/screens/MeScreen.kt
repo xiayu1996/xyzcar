@@ -51,6 +51,9 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.animation.animateContentSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -127,6 +130,7 @@ private fun AccountColumn(vm: AppViewModel) {
     val profile = vm.loadHolder("tab:Me:profile") { _ -> vm.repo.profile() }
     LaunchedEffect(Unit) { profile.ensureLoaded() }
     val user = profile.data
+    LaunchedEffect(user) { if (user != null) vm.refreshAccounts() }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 20.dp)) {
         Column(Modifier.weight(1f)) {
             AnimatedContent(user?.nickname, transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(150)) }, label = "nick") { n ->
@@ -146,6 +150,7 @@ private fun AccountColumn(vm: AppViewModel) {
             }
         }
     }
+    AccountSwitcher(vm)
     MenuRow(Icons.Filled.History, "收听历史") { vm.push(Route.History) }
     MenuRow(Icons.AutoMirrored.Filled.QueueMusic, "播放列表") { vm.push(Route.Queue) }
     MenuRow(Icons.Filled.DirectionsCar, "车机信息", "分屏、语音排查用") { vm.push(Route.Diagnostics) }
@@ -153,7 +158,8 @@ private fun AccountColumn(vm: AppViewModel) {
     // 退出登录要点两次，避免在车上误触
     var armed by remember { mutableStateOf(false) }
     LaunchedEffect(armed) { if (armed) { delay(3_000); armed = false } }
-    MenuRow(Icons.AutoMirrored.Filled.Logout, if (armed) "再点一次确认退出" else "退出登录", danger = armed) {
+    val others = vm.accounts.any { it.id != vm.accountId && it.loggedIn }
+    MenuRow(Icons.AutoMirrored.Filled.Logout, if (armed) "再点一次确认退出" else if (others) "退出当前账号" else "退出登录", danger = armed) {
         if (armed) vm.logout() else armed = true
     }
     Spacer(Modifier.height(16.dp))
@@ -164,6 +170,34 @@ private fun AccountColumn(vm: AppViewModel) {
     InfoRow("源码地址", REPO_URL.removePrefix("https://"), link = true) { runCatching { uri.openUri(REPO_URL) } }
     InfoRow("许可协议", LICENSE_NAME)
     Text(DISCLAIMER, style = MaterialTheme.typography.bodySmall, color = x.sub, modifier = Modifier.padding(top = 12.dp, bottom = 24.dp))
+}
+
+/** 其他已登录的账号（点一下切换）和「添加账号」；列表增减带展开动画 */
+@Composable
+private fun AccountSwitcher(vm: AppViewModel) {
+    val x = Xyz
+    val others = vm.accounts.filter { it.id != vm.accountId }
+    Column(Modifier.fillMaxWidth().animateContentSize()) {
+        others.forEach { a ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).clip(RoundedCornerShape(Dims.radius))
+                    .pressable(pressedScale = 0.98f) { vm.switchAccount(a.id) }.padding(horizontal = 4.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(32.dp).clip(CircleShape).background(x.fill)) {
+                    if (a.avatarUrl.isNotEmpty()) AsyncImage(a.avatarUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    else Icon(Icons.Filled.Person, null, tint = x.sub, modifier = Modifier.size(22.dp))
+                }
+                Spacer(Modifier.width(18.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(a.nickname.ifEmpty { "小宇宙账号" }, style = MaterialTheme.typography.titleMedium, color = x.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (a.loggedIn) "切换到这个账号" else "登录已过期，重新扫码登录", style = MaterialTheme.typography.bodySmall, color = x.sub)
+                }
+                Icon(Icons.Filled.SwapHoriz, null, tint = x.sub, modifier = Modifier.size(30.dp))
+            }
+        }
+    }
+    MenuRow(Icons.Filled.PersonAdd, "添加账号", "扫码登录另一个小宇宙账号") { vm.addAccount() }
 }
 
 /**
@@ -288,8 +322,26 @@ private fun SettingsColumn(vm: AppViewModel) {
         style = MaterialTheme.typography.titleMedium, color = x.text,
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(16.dp)).background(x.fill).padding(20.dp),
     )
+    PlaybackSettings(vm)
     CarLabSection()
     Spacer(Modifier.height(24.dp))
+}
+
+/** 播放：自动续播开关；「订阅新更新」只在自动续播打开时出现 */
+@Composable
+private fun PlaybackSettings(vm: AppViewModel) {
+    val x = Xyz
+    val local = vm.app.local
+    var auto by remember { mutableStateOf(local.autoContinue) }
+    var fresh by remember { mutableStateOf(local.autoFresh) }
+    Text("播放", style = MaterialTheme.typography.titleLarge, color = x.text, modifier = Modifier.padding(top = 36.dp))
+    LabSwitch("播完自动续播", "播放列表为空时，接着播补旧集的下一集或没听完的单集", auto) {
+        auto = it; local.autoContinue = it
+        if (!it) com.ryan.xyzcar.player.AutoNext.plan.value = null
+    }
+    AnimatedVisibility(auto, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        Column { LabSwitch("也播订阅新更新", "都没有时，播 3 天内更新、还没听过的单集", fresh) { fresh = it; local.autoFresh = it } }
+    }
 }
 
 /** 外观预览卡：迷你界面示意 + 单选圈；「跟随系统」左浅右深 */

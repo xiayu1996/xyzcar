@@ -57,7 +57,8 @@ class XyzApi(
     /** 单调时钟（纳秒），测试里可以替换 */
     private val clock: () -> Long = System::nanoTime,
 ) {
-    @Volatile private var lastRefreshAttempt = 0L
+    /** 每个账号上次发起刷新的时间（单调时钟）；在 refreshLock 里读写 */
+    private val lastRefreshAttempt = HashMap<String?, Long>()
 
 
     private val http = OkHttpClient.Builder()
@@ -127,23 +128,30 @@ class XyzApi(
         return b.build()
     }
 
-    /** 发请求；遇到 401 先刷新 token 再重试一次 */
+    /** 切换账号：和刷新互斥，保证刷新拿到的新 token 写回发起刷新的那个账号 */
+    suspend fun <T> withAuthLock(block: () -> T): T = refreshLock.withLock { block() }
+
+    /** 发请求；遇到 401 先刷新 token 再重试一次。中途切换了账号就放弃，不拿新账号去刷新或重试 */
     private suspend fun exec(call: Call): JsonObject = withContext(Dispatchers.IO) {
         if (!tokens.isLoggedIn) throw AuthExpiredException()
+        val account = tokens.accountId
         val sentToken = tokens.accessToken
         val first = http.newCall(build(call)).execute()
         if (first.code == 401) {
             first.close()
+            if (tokens.accountId != account) throw IOException("账号已切换")
             refreshToken(sentToken)
+            if (tokens.accountId != account) throw IOException("账号已切换")
             val second = http.newCall(build(call)).execute()
             if (second.code == 401) {
                 second.close()
                 // 刚刷新成功还被拒：登录态本身是好的（刷新接口认它），是这个接口不认，不能因此退出登录
                 throw ApiException(401, "这个功能暂时用不了（服务端拒绝，HTTP 401）")
             }
-            return@withContext parse(second)
+            return@withContext parse(second).also { if (tokens.accountId != account) throw IOException("账号已切换") }
         }
-        parse(first)
+        // 慢请求在切换账号之后才返回：丢掉，免得旧账号的数据进了新账号的缓存
+        parse(first).also { if (tokens.accountId != account) throw IOException("账号已切换") }
     }
 
     private fun parse(resp: Response): JsonObject = resp.use {
@@ -227,8 +235,8 @@ class XyzApi(
                 "CONFIRMED", "USED" -> {
                     val (access, refresh) = tokensFrom(resp, o)
                     if (access.isNotEmpty() && refresh.isNotEmpty()) {
-                        tokens.save(access, refresh)
-                        QrState.CONFIRMED
+                        // 登录页已经取消、回到了原账号：不覆盖原账号
+                        if (tokens.saveLogin(access, refresh)) QrState.CONFIRMED else QrState.EXPIRED
                     } else if (tokens.isLoggedIn) {
                         QrState.CONFIRMED
                     } else {
@@ -256,16 +264,18 @@ class XyzApi(
      * - 只在服务端对请求返回 401（access token 真过期）时才刷新，不定时刷新、不提前刷新。官方网页端也是这样做的。
      *   正常使用时大约每 20–30 分钟一次（access token 实测有效期 ≥ 21 分钟），App 不用时一次都不刷新。
      * - 多个请求同时 401 只刷新一次（锁 + 检查 token 是否已被别人换掉）。
-     * - 两次刷新请求至少间隔 [MIN_REFRESH_INTERVAL_MS]：刷新后紧接着又 401（例如某个接口本身就不认这个 token），
+     * - 同一账号两次刷新请求至少间隔 [MIN_REFRESH_INTERVAL_MS]（多账号各自计时）：刷新后紧接着又 401（例如某个接口本身就不认这个 token），
      *   或服务端 5xx / 断网时，不会每个请求都去刷新。用单调时钟，车机改时间不影响。
      */
     suspend fun refreshToken(staleAccess: String?) = refreshLock.withLock {
         if (tokens.accessToken != staleAccess && tokens.accessToken != null) return@withLock // 别人已经刷新过
-        val since = clock() - lastRefreshAttempt
-        if (lastRefreshAttempt != 0L && since < MIN_REFRESH_INTERVAL_MS * 1_000_000) {
+        // 间隔按账号分别计算：刚刷新过 A，切到 B 不用等
+        val account = tokens.accountId
+        val last = lastRefreshAttempt[account] ?: 0L
+        if (last != 0L && clock() - last < MIN_REFRESH_INTERVAL_MS * 1_000_000) {
             throw ApiException(429, "刚刷新过登录态，请稍后再试")
         }
-        lastRefreshAttempt = clock()
+        lastRefreshAttempt[account] = clock()
         withContext(Dispatchers.IO) {
             val refresh = tokens.refreshToken ?: throw AuthExpiredException()
             // 2026-11 实测：扫码登录拿到的 token 走 App 接口刷新即可，每次刷新会同时换新 refresh token（滑动续期）。
@@ -277,7 +287,7 @@ class XyzApi(
                 .build()
             http.newCall(req).execute().use { resp ->
                 val text = resp.body?.string().orEmpty()
-                if (resp.code == 401) throw AuthExpiredException()
+                if (resp.code == 401) { tokens.expire(tokens.accountId); throw AuthExpiredException() }
                 if (!resp.isSuccessful) throw ApiException(resp.code, "刷新登录态失败（HTTP ${resp.code}），稍后会自动重试")
                 val o = runCatching { json.parseToJsonElement(text) as? JsonObject }.getOrNull()
                 val (access, newRefresh) = tokensFrom(resp, o)

@@ -91,14 +91,15 @@ fun LoginScreen(vm: AppViewModel) {
     LoginContent(
         qr = qr, state = state, error = error,
         onRefresh = { round++ },
-        onDemo = if (com.ryan.xyzcar.BuildConfig.DEBUG) ({ vm.enableDemo() }) else null,
+        onDemo = if (com.ryan.xyzcar.BuildConfig.DEBUG && vm.addingFrom == null) ({ vm.enableDemo() }) else null,
+        onCancel = if (vm.addingFrom != null) ({ vm.cancelAddAccount() }) else null,
     )
 }
 
 /** 无状态的登录界面，截图测试直接用 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun LoginContent(qr: LoginQr?, state: QrState, error: String?, onRefresh: () -> Unit, onDemo: (() -> Unit)?) {
+fun LoginContent(qr: LoginQr?, state: QrState, error: String?, onRefresh: () -> Unit, onDemo: (() -> Unit)?, onCancel: (() -> Unit)? = null) {
     Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(48.dp, Alignment.CenterHorizontally),
@@ -110,7 +111,7 @@ fun LoginContent(qr: LoginQr?, state: QrState, error: String?, onRefresh: () -> 
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.widthIn(min = 280.dp, max = 460.dp).align(Alignment.CenterVertically),
             ) {
-                Text(androidx.compose.ui.res.stringResource(com.ryan.xyzcar.R.string.app_name), style = MaterialTheme.typography.headlineLarge)
+                Text(if (onCancel != null) "添加账号" else androidx.compose.ui.res.stringResource(com.ryan.xyzcar.R.string.app_name), style = MaterialTheme.typography.headlineLarge)
                 Text(
                     when (state) {
                         QrState.WAITING -> "打开手机上的小宇宙 App，扫描左侧二维码登录"
@@ -127,6 +128,11 @@ fun LoginContent(qr: LoginQr?, state: QrState, error: String?, onRefresh: () -> 
                 )
                 error?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error) }
                 BigButton("刷新二维码", secondary = true, onClick = onRefresh)
+                if (onCancel != null) {
+                    OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = Dims.touch)) {
+                        Text("取消，回到原账号", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
                 // 仅 debug 包：不登录、不发请求，用样例数据看界面（云测试 / 截图用）
                 if (onDemo != null) {
                     OutlinedButton(onClick = onDemo, modifier = Modifier.heightIn(min = Dims.touch)) {
