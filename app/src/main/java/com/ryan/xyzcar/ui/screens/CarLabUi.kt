@@ -11,9 +11,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import com.ryan.xyzcar.ui.components.BigButton
-import androidx.compose.foundation.layout.Box
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -58,7 +55,6 @@ import com.ryan.xyzcar.data.CarLab
 import com.ryan.xyzcar.data.DebugLog
 import com.ryan.xyzcar.data.LanShare
 import com.ryan.xyzcar.data.PublicFiles
-import com.ryan.xyzcar.ui.components.Chip
 import com.ryan.xyzcar.ui.components.Hairline
 import com.ryan.xyzcar.ui.theme.Dims
 import com.ryan.xyzcar.ui.theme.Xyz
@@ -79,15 +75,12 @@ private fun ResultBox(text: String) {
 }
 
 /** 设置里的「车机测试」：临时测试用，默认关闭，每次操作的结果写进报告的日志 */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun CarLabSection(store: com.ryan.xyzcar.data.LocalStore = App.instance.local) {
     val x = Xyz
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var music by remember { mutableStateOf(store.labMusicRole) }
-    var alias by remember { mutableStateOf(runCatching { CarLab.enabledAlias(ctx) }.getOrNull()) }
-    var custom by remember { mutableStateOf("") }
     var result by remember { mutableStateOf("") }
     fun run(toggle: String, on: Any?, block: () -> String) = scope.launch {
         result = withContext(Dispatchers.IO) {
@@ -96,30 +89,6 @@ internal fun CarLabSection(store: com.ryan.xyzcar.data.LocalStore = App.instance
     }
 
     Text("车机测试", style = MaterialTheme.typography.titleLarge, color = x.text, modifier = Modifier.padding(top = 36.dp))
-    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
-        Text("额外桌面入口", style = MaterialTheme.typography.titleMedium, color = x.text)
-        Text("桌面多一个打开本应用的图标，测小迪「打开 + 名字」", style = MaterialTheme.typography.bodySmall, color = x.sub)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 10.dp)) {
-            (listOf<Pair<String?, String>>(null to "不加") + CarLab.LAUNCHER_ALIASES).forEach { (cls, name) ->
-                Chip(name, selected = alias == cls) { alias = cls; run("alias", cls) { CarLab.setAlias(ctx, cls) } }
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 10.dp)) {
-            Box(
-                Modifier.weight(1f).heightIn(min = Dims.touch).clip(RoundedCornerShape(18.dp)).background(x.fill).padding(horizontal = 20.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                if (custom.isEmpty()) Text("自定义名字", style = MaterialTheme.typography.titleMedium, color = x.sub)
-                BasicTextField(
-                    value = custom, onValueChange = { custom = it.take(10) }, singleLine = true,
-                    textStyle = MaterialTheme.typography.titleMedium.copy(color = x.text), cursorBrush = SolidColor(x.accent),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            BigButton("添加到桌面", tinted = true, enabled = custom.isNotBlank()) { run("shortcut", custom) { CarLab.pinShortcut(ctx, custom) } }
-        }
-    }
-    Hairline()
     LabSwitch("小迪默认音乐用本应用", "把小迪的默认音乐换成本应用，关闭时换回原来的", music) { on ->
         music = on; store.labMusicRole = on
         run("music", on) { if (on) BydBridge.takeMusicRole(ctx, store) else BydBridge.restoreMusicRole(ctx, store) }
@@ -128,7 +97,7 @@ internal fun CarLabSection(store: com.ryan.xyzcar.data.LocalStore = App.instance
 }
 
 @Composable
-private fun LabSwitch(title: String, hint: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun LabSwitch(title: String, hint: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     val x = Xyz
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 84.dp).padding(vertical = 6.dp)) {
         Column(Modifier.weight(1f)) {

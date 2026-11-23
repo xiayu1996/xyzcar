@@ -85,31 +85,6 @@
             </intent-filter>
         </activity>
 
-        <!-- 小迪「打开 X」测试用的额外启动器入口，默认禁用，设置里的实验开关启用其中一个。
-             「路上听」里的「听」可能让小迪把整句当成听歌意图，换成没有媒体含义的名字对照 -->
-        <activity-alias
-            android:name=".AliasLuming"
-            android:enabled="false"
-            android:exported="true"
-            android:label="@string/alias_luming"
-            android:targetActivity=".MainActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".AliasNingmeng"
-            android:enabled="false"
-            android:exported="true"
-            android:label="@string/alias_ningmeng"
-            android:targetActivity=".MainActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
         <receiver android:name=".BootReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

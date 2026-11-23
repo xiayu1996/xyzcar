@@ -15,12 +15,6 @@ import java.util.Locale
  * 快照只在内容变化时整份写进事件日志，没变化只记一行哈希，避免日志被重复内容撑满。
  */
 object CarLab {
-    /** 额外的启动器入口（activity-alias，默认禁用）：换一个不含「听 / 音 / 乐 / 播 / 声 / 台」的名字测小迪「打开 X」 */
-    val LAUNCHER_ALIASES = listOf(
-        "com.ryan.xyzcar.AliasLuming" to "鹿鸣",
-        "com.ryan.xyzcar.AliasNingmeng" to "柠檬",
-    )
-
     private val VOLATILE = Regex("getScreenAreaInfoForMulti|getLockActivityForMulti|getAppAreaIdForMulti")
 
     /** 当前快照（只读）：环境 + 分屏探针 + 小迪设置表 + 媒体中心 + 启动器入口 */
@@ -75,24 +69,6 @@ object CarLab {
             .joinToString(",") { "${it.activityInfo.name.substringAfterLast('.')}:${it.loadLabel(ctx.packageManager)}" }
     }.getOrElse { "error:${it.javaClass.simpleName}" }
 
-    /** 当前启用的额外入口（组件名），没有返回 null */
-    fun enabledAlias(ctx: Context): String? = LAUNCHER_ALIASES.map { it.first }.firstOrNull { cls ->
-        ctx.packageManager.getComponentEnabledSetting(ComponentName(ctx.packageName, cls)) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-    }
-
-    /** 只启用 [alias]（null 表示全部关掉），不杀进程；返回给界面的说明 */
-    fun setAlias(ctx: Context, alias: String?): String {
-        val pm = ctx.packageManager
-        LAUNCHER_ALIASES.forEach { (cls, _) ->
-            val state = if (cls == alias) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
-            pm.setComponentEnabledSetting(ComponentName(ctx.packageName, cls), state, PackageManager.DONT_KILL_APP)
-        }
-        val labels = launcherLabels(ctx)
-        DebugLog.kv("voice", "launcher_alias", "enabled" to alias, "labels" to labels)
-        val name = LAUNCHER_ALIASES.firstOrNull { it.first == alias }?.second
-        return if (name == null) "已去掉额外入口" else "桌面多了一个「$name」入口，试试对小迪说「打开$name」"
-    }
-
     /**
      * 导出报告（给 agent）：当前快照 + 应用对照 + 精简后的事件日志（连续重复合并，最多 400 行）。
      * 不含系统属性全集（里面有蓝牙名）；日志写入时已打码。应用对照会列出车机上装了哪些第三方应用。
@@ -107,31 +83,6 @@ object CarLab {
     })
 
     fun reportFileName(): String = "xyzcar-report-" + SimpleDateFormat("MMdd-HHmmss", Locale.US).format(Date()) + ".txt"
-
-    /**
-     * 测试用：在桌面添加一个自定义名字的快捷方式（应用自己的名字装好后改不了，只能用快捷方式）。
-     * 小迪「打开 X」可能只认应用名、不认快捷方式，结果对照着看。
-     */
-    fun pinShortcut(ctx: Context, name: String): String {
-        val label = name.trim().take(10)
-        if (label.isEmpty()) return "先输入名字"
-        val sm = ctx.getSystemService(android.content.pm.ShortcutManager::class.java)
-        val supported = sm?.isRequestPinShortcutSupported == true
-        val r = if (!supported) "unsupported" else runCatching {
-            val info = android.content.pm.ShortcutInfo.Builder(ctx, "test-${label.hashCode()}")
-                .setShortLabel(label)
-                .setIcon(android.graphics.drawable.Icon.createWithResource(ctx, com.ryan.xyzcar.R.mipmap.ic_launcher))
-                .setIntent(Intent(Intent.ACTION_MAIN).setClassName(ctx, "com.ryan.xyzcar.MainActivity"))
-                .build()
-            if (sm!!.requestPinShortcut(info, null)) "requested" else "rejected"
-        }.getOrElse { "error:${it.javaClass.simpleName}" }
-        DebugLog.kv("voice", "pin_shortcut", "label" to label, "result" to r)
-        return when (r) {
-            "requested" -> "已请求添加「$label」，桌面可能会弹窗确认"
-            "unsupported" -> "车机桌面不支持添加快捷方式"
-            else -> "添加失败：$r"
-        }
-    }
 
     /** 启动 intent 的摘要：不记 extras 的值，只记键名 */
     fun describe(activity: Activity, intent: Intent?, how: String): String {
