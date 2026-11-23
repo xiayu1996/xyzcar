@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -298,6 +299,7 @@ class UiSnapshots {
                     Text("演示账号", style = MaterialTheme.typography.headlineLarge, color = Xyz.text)
                     Text("小宇宙账号 · 已登录", style = MaterialTheme.typography.bodyMedium, color = Xyz.sub)
                     Spacer(Modifier.height(16.dp))
+                    MenuRow(Icons.Filled.PersonAdd, "添加账号", "扫码登录另一个小宇宙账号") {}
                     MenuRow(Icons.Filled.History, "收听历史") {}
                     MenuRow(Icons.AutoMirrored.Filled.QueueMusic, "播放列表") {}
                     MenuRow(Icons.Filled.DirectionsCar, "车机信息", "分屏、语音排查用") {}
@@ -314,8 +316,22 @@ class UiSnapshots {
                     }
                     Text("显示大小", style = MaterialTheme.typography.titleLarge, color = Xyz.text, modifier = Modifier.padding(top = 36.dp))
                     TickSlider(2, com.ryan.xyzcar.data.SIZE_LABELS) {}
+                    Text("播放", style = MaterialTheme.typography.titleLarge, color = Xyz.text, modifier = Modifier.padding(top = 36.dp))
+                    com.ryan.xyzcar.ui.screens.LabSwitch("播完自动续播", "播放列表为空时，接着播补旧集的下一集或没听完的单集", true) {}
+                    com.ryan.xyzcar.ui.screens.LabSwitch("也播订阅新更新", "都没有时，播 3 天内更新、还没听过的单集", false) {}
                     com.ryan.xyzcar.ui.screens.CarLabSection(store)
                 }
+            }
+        } } }
+    }
+
+    /** 自动续播提示条：播完前的预告、自动接上后的「换一集」 */
+    @Test fun autoNextBanner() {
+        paparazzi.unsafeUpdateConfig(config(night = false))
+        shot { XyzCarTheme(ThemeMode.Light) { androidx.compose.material3.Surface(color = Xyz.bg, contentColor = Xyz.text) {
+            Column(Modifier.fillMaxSize().padding(32.dp)) {
+                com.ryan.xyzcar.ui.components.AutoNextBar(com.ryan.xyzcar.ui.components.AutoNextNotice("接下来 · 接着补这个节目", "vol.276 一个很长很长的单集标题，用来看截断效果是否正常", "不要自动播", false)) {}
+                com.ryan.xyzcar.ui.components.AutoNextBar(com.ryan.xyzcar.ui.components.AutoNextNotice("已自动播放 · 接着听没听完的", "vol.275 桃酥辣条干脆面", "换一集", true)) {}
             }
         } } }
     }
