@@ -1,6 +1,11 @@
 package com.ryan.xyzcar.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import com.ryan.xyzcar.ui.components.pressable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -44,13 +49,19 @@ fun EpisodeScreen(vm: AppViewModel, initial: Episode, onBack: (() -> Unit)?) {
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Cover(ep.coverUrl, 168.dp, title = ep.podcastTitle, color = ep.color)
+                        // 封面和节目名都能点进节目页
+                        Box(Modifier.pressable(ep.pid.isNotEmpty(), pressedScale = 0.97f) { vm.push(Route.PodcastDetail(ep.pid)) }) {
+                            Cover(ep.coverUrl, 168.dp, title = ep.podcastTitle, color = ep.color)
+                        }
                         Spacer(Modifier.width(24.dp))
                         Column(Modifier.weight(1f)) {
                             Text(ep.title, style = MaterialTheme.typography.titleLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
                             Spacer(Modifier.height(8.dp))
                             if (ep.podcastTitle.isNotEmpty()) {
-                                Text(ep.podcastTitle, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Text(
+                                    ep.podcastTitle, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).pressable(ep.pid.isNotEmpty(), pressedScale = 0.97f) { vm.push(Route.PodcastDetail(ep.pid)) }.padding(vertical = 6.dp),
+                                )
                             }
                             Text(
                                 listOf(Fmt.minutes(ep.durationSec), Fmt.date(ep.pubDate)).filter { it.isNotEmpty() }.joinToString(" · "),
