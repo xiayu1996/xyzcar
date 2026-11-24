@@ -1,5 +1,17 @@
 package com.ryan.xyzcar.ui.screens
 
+import com.ryan.xyzcar.ui.theme.Xyz
+import com.ryan.xyzcar.ui.theme.NumberStyle
+import com.ryan.xyzcar.ui.components.SeekBar
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
@@ -77,7 +89,30 @@ fun EpisodeScreen(vm: AppViewModel, initial: Episode, onBack: (() -> Unit)?) {
                         if (ep.pid.isNotEmpty()) BigButton("查看节目", secondary = true) { vm.push(Route.PodcastDetail(ep.pid)) }
                     }
                 }
+                item { NowPlayingSeek(vm, ep.eid) }
                 item { Shownotes(vm, ep) }
+            }
+        }
+    }
+}
+
+/** 正在播放（或暂停在）这一集时：可拖动的进度条 + 已播 / 剩余时间；只有这一块跟着进度刷新 */
+@Composable
+private fun NowPlayingSeek(vm: AppViewModel, eid: String) {
+    val currentEid by vm.player.currentEid.collectAsState()
+    AnimatedVisibility(
+        currentEid == eid,
+        enter = expandVertically(tween(320)) + fadeIn(tween(280)),
+        exit = shrinkVertically(tween(280)) + fadeOut(tween(180)),
+    ) {
+        val ps by vm.player.state.collectAsState()
+        Column {
+            SeekBar(ps, MaterialTheme.colorScheme.primary, Xyz.fill, vm.player::seekTo)
+            Row(Modifier.fillMaxWidth()) {
+                val num = MaterialTheme.typography.bodyLarge.merge(NumberStyle)
+                Text(Fmt.clock(ps.positionMs), style = num, color = Xyz.sub)
+                Spacer(Modifier.weight(1f))
+                if (ps.durationMs > 0) Text("-" + Fmt.clock(ps.durationMs - ps.positionMs), style = num, color = Xyz.sub)
             }
         }
     }
