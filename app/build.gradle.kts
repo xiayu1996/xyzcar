@@ -5,7 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
-    id("app.cash.paparazzi") // 界面截图测试：在电脑上直接渲染 Compose 界面，不需要模拟器
+    id("app.cash.paparazzi")
 }
 
 val signingProps = Properties().apply {
@@ -89,10 +89,10 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3") // 登录二维码（纯 Java）
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0") // 登录态刷新逻辑的单元测试
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
 
-// 登录验证工具（scripts/login-check.sh 调用）：把环境变量转给单元测试进程，并且每次都重新跑
+// 供 scripts/login-check.sh 把环境变量传给 LoginCheck
 tasks.withType<Test>().configureEach {
     val step = providers.environmentVariable("XYZ_STEP").orNull
     listOf("XYZ_STEP", "XYZ_APP_VERSION", "XYZ_APP_BUILD", "XYZ_NO_OPEN", "XYZ_SHAPE", "XYZ_SHOW_N", "XYZ_PROBE").forEach { k ->

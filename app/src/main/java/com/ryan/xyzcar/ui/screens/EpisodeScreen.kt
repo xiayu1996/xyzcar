@@ -46,7 +46,6 @@ import com.ryan.xyzcar.ui.components.Cover
 import com.ryan.xyzcar.ui.components.ScreenHeader
 import com.ryan.xyzcar.ui.theme.Dims
 
-/** F12 单集详情：标题、播放、加入队列、shownotes（时间戳可点击跳转） */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EpisodeScreen(vm: AppViewModel, initial: Episode, onBack: (() -> Unit)?) {
@@ -61,7 +60,6 @@ fun EpisodeScreen(vm: AppViewModel, initial: Episode, onBack: (() -> Unit)?) {
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // 封面和节目名都能点进节目页
                         Box(Modifier.pressable(ep.pid.isNotEmpty(), pressedScale = 0.97f) { vm.push(Route.PodcastDetail(ep.pid)) }) {
                             Cover(ep.coverUrl, 168.dp, title = ep.podcastTitle, color = ep.color)
                         }
@@ -96,7 +94,7 @@ fun EpisodeScreen(vm: AppViewModel, initial: Episode, onBack: (() -> Unit)?) {
     }
 }
 
-/** 正在播放（或暂停在）这一集时：可拖动的进度条 + 已播 / 剩余时间；只有这一块跟着进度刷新 */
+/** 单独成块，只有这里跟着进度重组 */
 @Composable
 private fun NowPlayingSeek(vm: AppViewModel, eid: String) {
     val currentEid by vm.player.currentEid.collectAsState()

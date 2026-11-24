@@ -89,14 +89,10 @@ import com.ryan.xyzcar.ui.theme.XyzCarTheme
 import org.junit.Rule
 import org.junit.Test
 
-/**
- * 界面截图（Paparazzi，在电脑上渲染，不需要模拟器）：
- *   ./gradlew recordPaparazziDebug   → app/src/test/snapshots/images/
- * 用演示数据拼出主要界面，检查配色、排版、放大后是否被裁切。
- */
+/** ./gradlew recordPaparazziDebug → app/src/test/snapshots/images/ */
 class UiSnapshots {
     companion object {
-        /** 有真实公开内容快照（./scripts/login-check.sh dump 生成）就用快照，没有就用合成数据 */
+        /** 快照由 ./scripts/login-check.sh dump 生成 */
         init {
             val f = java.io.File("src/debug/assets/demo_snapshot.json")
             if (f.exists()) DemoData.install(
@@ -105,7 +101,7 @@ class UiSnapshots {
         }
     }
 
-    /** Paparazzi 不能联网，Coil 在预览模式下也只画占位：封面从 src/test/resources/covers/ 读本地文件（文件名规则见 coverName） */
+    /** Paparazzi 不能联网、Coil 预览模式只画占位，封面只能读本地文件 */
     private val coverCache = HashMap<String, androidx.compose.ui.graphics.ImageBitmap?>()
     private val localCover: (String) -> androidx.compose.ui.graphics.ImageBitmap? = { url ->
         coverCache.getOrPut(url) {
@@ -115,7 +111,6 @@ class UiSnapshots {
         }
     }
 
-    /** 所有截图都包一层：提供本地封面 */
     private fun shot(content: @Composable () -> Unit) = paparazzi.snapshot {
         CompositionLocalProvider(com.ryan.xyzcar.ui.components.LocalCoverOverride provides localCover) { content() }
     }
@@ -134,7 +129,7 @@ class UiSnapshots {
         episode = DemoData.episodes.getOrElse(1) { DemoData.episodes.first() }, isPlaying = true, positionMs = 754_000, durationMs = 4_200_000, speed = 1.25f, connected = true,
     )
 
-    /** 截图用的车机横屏：1920×900 @ 240dpi = 1280×600dp（海豹 08 实车「车机信息」里的窗口大小） */
+    /** 1920×900 @ 240dpi = 1280×600dp，海豹 08 实车窗口大小 */
     private fun config(night: Boolean, portrait: Boolean = false, widthPx: Int = 1920) = DeviceConfig.PIXEL_C.copy(
         screenWidth = if (portrait) 1080 else widthPx, screenHeight = if (portrait) 1920 else 900, xdpi = 240, ydpi = 240,
         density = ResDensity.HIGH, softButtons = false,
@@ -142,7 +137,6 @@ class UiSnapshots {
         nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT,
     )
 
-    /** 和 App 一样的外框：左侧导航 | 内容（按「显示大小」缩放）+ 迷你播放条 */
     @Composable
     private fun Landscape(tab: Tab?, scale: Float = SIZE_SCALES[SIZE_DEFAULT], content: @Composable () -> Unit) = androidx.compose.material3.Surface(color = Xyz.bg, contentColor = Xyz.text) {
         Row(Modifier.fillMaxSize().background(Xyz.bg)) {
@@ -180,7 +174,6 @@ class UiSnapshots {
         shot { XyzCarTheme(ThemeMode.Light) { Landscape(Tab.Discover) { Discover() } } }
     }
 
-    /** 榜单区：三个榜在标题处切换，每个榜 15 集横向分页 */
     @Test fun discoverTopLists() {
         paparazzi.unsafeUpdateConfig(config(night = false))
         shot {
@@ -304,13 +297,11 @@ class UiSnapshots {
         shot { XyzCarTheme(ThemeMode.Light) { Landscape(Tab.Me) { Me() } } }
     }
 
-    /** 竖长画布：把整页从头到尾渲染出来（不滚动），给人检查内容多不多 */
     private fun tall(heightPx: Int) = DeviceConfig.PIXEL_C.copy(
         screenWidth = 1920, screenHeight = heightPx, xdpi = 240, ydpi = 240,
         density = ResDensity.HIGH, softButtons = false, orientation = ScreenOrientation.PORTRAIT, nightMode = NightMode.NOTNIGHT,
     )
 
-    /** 「我的」整页：和 MeScreen 同样的行与设置，右栏含车机实验功能 */
     @Test fun meFullPage() {
         paparazzi.unsafeUpdateConfig(tall(2100))
         val store = com.ryan.xyzcar.data.LocalStore(paparazzi.context)
@@ -346,7 +337,6 @@ class UiSnapshots {
         } } }
     }
 
-    /** 自动续播提示条：播完前的预告、自动接上后的「换一集」 */
     @Test fun autoNextBanner() {
         paparazzi.unsafeUpdateConfig(config(night = false))
         shot { XyzCarTheme(ThemeMode.Light) { androidx.compose.material3.Surface(color = Xyz.bg, contentColor = Xyz.text) {
@@ -357,7 +347,7 @@ class UiSnapshots {
         } } }
     }
 
-    /** 「车机信息」整页（模拟器上读不到比亚迪的东西，车上会多出小迪 / 分屏 / 媒体中心几段） */
+    /** 比亚迪相关段落只在车上出现，截图里没有 */
     @Test fun diagnosticsFullPage() {
         paparazzi.unsafeUpdateConfig(tall(1300))
         shot { XyzCarTheme(ThemeMode.Light) { androidx.compose.material3.Surface(color = Xyz.bg, contentColor = Xyz.text) {
@@ -370,25 +360,24 @@ class UiSnapshots {
         shot { XyzCarTheme(ThemeMode.Light) { FullPlayer(playing, 15, noop) } }
     }
 
-    /** 全屏播放页打开文字稿：代替封面，当前句高亮 */
     @Test fun playerTranscript() {
         paparazzi.unsafeUpdateConfig(config(night = false))
         shot { XyzCarTheme(ThemeMode.Light) { FullPlayer(playing, 15, noop, transcript = com.ryan.xyzcar.ui.components.TranscriptUi.Ready(DemoData.transcript())) } }
     }
 
-    /** 分屏 1/2 的全屏播放页：上下排列 */
+    /** 分屏 1/2 */
     @Test fun playerSplit() {
         paparazzi.unsafeUpdateConfig(config(night = false, widthPx = 960))
         shot { XyzCarTheme(ThemeMode.Light) { FullPlayer(playing, 15, noop) } }
     }
 
-    /** 分屏 1/3 的全屏播放页：次要操作图标在上文字在下 */
+    /** 分屏 1/3 */
     @Test fun playerNarrow() {
         paparazzi.unsafeUpdateConfig(config(night = false, widthPx = 630))
         shot { XyzCarTheme(ThemeMode.Light) { FullPlayer(playing, null, noop) } }
     }
 
-    /** 分屏 1/3：底部导航 + 窄迷你播放条 */
+    /** 分屏 1/3 */
     @Test fun narrowSplitLight() {
         paparazzi.unsafeUpdateConfig(config(night = false, widthPx = 630))
         shot { XyzCarTheme(ThemeMode.Light) { androidx.compose.material3.Surface(color = Xyz.bg) {

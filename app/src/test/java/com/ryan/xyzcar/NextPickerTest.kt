@@ -39,10 +39,10 @@ class NextPickerTest {
 
     @Test fun abandonedEpisodesAreNotPicked() {
         val r = pick(history = listOf(
-            Played(ep("tried", progress = 60), now - day),        // 只听了开头
-            Played(ep("stale", progress = 900), now - 20 * day),  // 太久没碰
-            Played(ep("nearlyDone", progress = 3590), now),       // 其实听完了
-            Played(ep("cur", progress = 100), now),               // 刚听完的那集（进度可能还没上报）
+            Played(ep("tried", progress = 60), now - day),
+            Played(ep("stale", progress = 900), now - 20 * day),
+            Played(ep("nearlyDone", progress = 3590), now),
+            Played(ep("cur", progress = 100), now),               // 刚听完，进度可能还没上报
         ))
         assertNull(r)
     }

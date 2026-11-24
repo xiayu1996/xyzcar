@@ -67,7 +67,6 @@ class UpdaterTest {
         assertEquals("• feat(ui): add update", r.notes)
     }
 
-    /** 第二次检查带上 ETag；服务端回 304 时用上次的内容 */
     @Test fun latestUsesEtagAnd304() {
         var calls = 0
         gitee.dispatcher = object : Dispatcher() {
@@ -85,7 +84,6 @@ class UpdaterTest {
         assertEquals("\"abc\"", gitee.takeRequest().getHeader("If-None-Match"))
     }
 
-    /** 下载新包时清理旧文件，但不删 ETag 缓存 */
     @Test fun downloadKeepsEtagCache() {
         gitee.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {

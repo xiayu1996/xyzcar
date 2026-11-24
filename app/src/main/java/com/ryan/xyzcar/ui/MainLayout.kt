@@ -82,12 +82,6 @@ fun Tab.icon(selected: Boolean): ImageVector = when (this) {
     Tab.Me -> if (selected) Icons.Filled.Person else Icons.Outlined.Person
 }
 
-/**
- * 主布局（按宽度自适应，分屏时也能用）：
- * - 宽（≥ 600dp）：左侧竖向导航 | 内容 + 底部迷你播放条
- * - 窄（分屏 1/3、竖屏手机）：内容 / 迷你播放条 / 底部导航
- * 全屏播放页盖在最上层，从底部滑出。
- */
 @Composable
 fun MainLayout(vm: AppViewModel) {
     val ps by vm.player.state.collectAsState()
@@ -101,7 +95,7 @@ fun MainLayout(vm: AppViewModel) {
 
     BackHandler(enabled = vm.playerExpanded || vm.stack.size > 1) { vm.back() }
 
-    // 刚登录进来时也查一次（回到前台的检查在 MainActivity.onStart；两处共用同一个节流）
+    // 回到前台的检查在 MainActivity.onStart，两处共用同一个节流
     LaunchedEffect(Unit) { vm.checkUpdate(silent = true) }
 
     val actions = remember {
@@ -119,7 +113,7 @@ fun MainLayout(vm: AppViewModel) {
             toggleTranscript = vm::toggleTranscript,
         )
     }
-    // 旋转、分屏改变宽度时内容区整体搬家，不丢状态、不重放转场。
+    // 旋转、分屏改宽度时内容区整体搬家，不丢状态、不重放转场
     // 「显示大小」只缩放内容区；导航和播放条保持车机触控尺寸
     val content = remember { movableContentOf { ContentScale(vm.uiScale) { ContentArea(vm) } } }
 
@@ -157,7 +151,7 @@ fun MainLayout(vm: AppViewModel) {
             enter = slideInVertically(tween(420, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(300)),
             exit = slideOutVertically(tween(360, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(300)),
         ) {
-            // 定时剩余分钟：自己每 10 秒更新一次（暂停时播放状态不刷新）
+            // 暂停时播放状态不刷新，剩余分钟自己每 10 秒算一次
             val left by androidx.compose.runtime.produceState<Int?>(null, sleepEnd) {
                 while (true) {
                     value = sleepEnd?.let { ((it - android.os.SystemClock.elapsedRealtime()) / 60_000L + 1).toInt().coerceAtLeast(1) }
@@ -166,7 +160,6 @@ fun MainLayout(vm: AppViewModel) {
                 }
             }
             Box(Modifier.fillMaxSize()) {
-                // 文字稿：打开时按当前单集加载，换集重新加载
                 val trEid = ps.episode?.eid
                 val transcript by androidx.compose.runtime.produceState<TranscriptUi?>(null, vm.transcriptOn, trEid) {
                     if (!vm.transcriptOn || trEid == null) { value = null; return@produceState }
@@ -184,7 +177,6 @@ fun MainLayout(vm: AppViewModel) {
     }
 }
 
-/** 内容区缩放：换算 density，文字、封面、间距一起变，切换档位时平滑过渡 */
 @Composable
 fun ContentScale(scale: Float, content: @Composable () -> Unit) {
     val s by androidx.compose.animation.core.animateFloatAsState(scale, tween(300), label = "contentScale")
@@ -192,7 +184,6 @@ fun ContentScale(scale: Float, content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalDensity provides Density(base.density * s, base.fontScale), content = content)
 }
 
-/** 导航项：选中是强调色图标 + 浅青底，颜色切换有渐变 */
 @Composable
 private fun NavItem(tab: Tab, selected: Boolean, modifier: Modifier, height: Dp, showLabel: Boolean, onClick: () -> Unit) {
     val x = Xyz
@@ -217,7 +208,6 @@ private fun NavItem(tab: Tab, selected: Boolean, modifier: Modifier, height: Dp,
     }
 }
 
-/** 竖向导航：高度不够时先压缩每项高度、再去掉文字，最后允许滚动 */
 @Composable
 fun NavRail(selected: Tab?, onTab: (Tab) -> Unit) {
     BoxWithConstraints(Modifier.width(Dims.railWidth).fillMaxHeight().padding(vertical = 16.dp, horizontal = 8.dp)) {
@@ -235,7 +225,6 @@ fun NavRail(selected: Tab?, onTab: (Tab) -> Unit) {
     }
 }
 
-/** 底部导航（窄屏 / 分屏 1/3） */
 @Composable
 fun BottomNav(selected: Tab?, onTab: (Tab) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {

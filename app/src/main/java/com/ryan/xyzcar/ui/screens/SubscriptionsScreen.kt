@@ -62,15 +62,12 @@ import com.ryan.xyzcar.ui.components.pressable
 import com.ryan.xyzcar.ui.theme.Dims
 import com.ryan.xyzcar.ui.theme.Xyz
 
-/** 「未听 + 在听」：没听完的单集（服务端标记已听完、或进度到最后 30 秒的算听完） */
-
 private class SubsState {
     var todoOnly by mutableStateOf(true)
     var offline by mutableStateOf(false)
     var force = false
 }
 
-/** 网格版的「滚动到底自动加载」 */
 @Composable
 fun <T> AutoLoadGrid(
     h: PagedHolder<T>,
@@ -101,10 +98,6 @@ fun <T> AutoLoadGrid(
     }
 }
 
-/**
- * 订阅（官方「订阅 → 更新」）：订阅节目的新单集，默认只看「未听 + 在听」，可切「全部」。
- * 右上角「我的订阅」进节目网格。切换筛选时列表项有位移 / 淡入淡出动画。
- */
 @Composable
 fun SubscriptionsScreen(vm: AppViewModel) {
     val st = vm.holder("tab:Subscriptions:state") { SubsState() }
@@ -125,7 +118,7 @@ fun SubscriptionsScreen(vm: AppViewModel) {
         Chip("全部", selected = !st.todoOnly) { st.todoOnly = false }
     }
     val shown = if (st.todoOnly) h.items.filter { it.isTodo() } else h.items
-    // 只看未听时一页里可能大半都听完了：不够一屏就自动再拉一页，最多拉到 100 集为止
+    // 只看未听时一页可能大半已听完：不满一屏就再拉一页，最多到 100 集
     LaunchedEffect(st.todoOnly, shown.size, h.loading, h.end) {
         if (st.todoOnly && h.loadedOnce && shown.size < 8 && !h.end && !h.loading && h.error == null && h.items.size < 100) h.loadMore()
     }
@@ -145,7 +138,7 @@ fun SubscriptionsScreen(vm: AppViewModel) {
     } }
 }
 
-/** 我的订阅：节目封面网格，按最新单集时间排序（和官方一致） */
+/** 顺序沿用服务端：按最新单集时间（和官方一致） */
 @Composable
 fun SubsShowsScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     val st = vm.holder("subs-shows:state") { SubsState() }

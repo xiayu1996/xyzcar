@@ -10,7 +10,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Test
 import java.io.IOException
 
-/** 加载更多失败后不能自动重试（断网时会变成一直发请求），只有用户点「重试」才再请求 */
+/** 断网时自动重试会一直发请求，失败后只能等用户点「重试」 */
 class PagedHolderTest {
     @Test
     fun failedLoadMoreWaitsForManualRetry() {
@@ -29,7 +29,7 @@ class PagedHolderTest {
         assertEquals(2, calls)
         assertNotNull(h.error)
 
-        // 滚动到底、筛选不够一屏等自动触发：都不应该再发请求
+        // 模拟滚动到底、筛选不够一屏等自动触发
         repeat(5) { h.loadMore() }
         assertEquals(2, calls)
 

@@ -20,7 +20,6 @@ import com.ryan.xyzcar.data.Episode
 import com.ryan.xyzcar.ui.AppViewModel
 import com.ryan.xyzcar.ui.ShownotesParser
 
-/** F12 shownotes：HTML 渲染，时间戳可点击跳转 */
 @Composable
 fun ShownotesView(vm: AppViewModel, ep: Episode, modifier: Modifier = Modifier) {
     val text = remember(ep.eid, ep.shownotes, ep.description) { buildShownotes(vm, ep) }
@@ -43,16 +42,14 @@ fun ShownotesView(vm: AppViewModel, ep: Episode, modifier: Modifier = Modifier) 
     )
 }
 
-/** www.xiaoyuzhoufm.com/podcast/<id>、/episode/<id> */
 private val XYZ_LINK = Regex("""xiaoyuzhoufm\.com/(podcast|episode)/([0-9a-zA-Z]+)""")
 
 private fun buildShownotes(vm: AppViewModel, ep: Episode): CharSequence {
     val html = ep.shownotes.ifEmpty { ep.description.replace("\n", "<br>") }
         .replace(Regex("<img[^>]*>", RegexOption.IGNORE_CASE), "")
     val spanned = SpannableStringBuilder(HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT))
-    // 去掉末尾空行
     while (spanned.isNotEmpty() && spanned.last().isWhitespace()) spanned.delete(spanned.length - 1, spanned.length)
-    // 简介里指向小宇宙节目 / 单集的链接：在应用里打开，不跳浏览器（车机上多半没有浏览器）
+    // 小宇宙节目 / 单集链接在应用内打开：车机多半没有浏览器
     spanned.getSpans(0, spanned.length, URLSpan::class.java).forEach { span ->
         val m = XYZ_LINK.find(span.url) ?: return@forEach
         val (kind, id) = m.destructured

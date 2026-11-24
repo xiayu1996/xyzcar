@@ -11,17 +11,12 @@ import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.Properties
 
-/**
- * 真实登录验证（不是常规单元测试）：只有 scripts/login-check.sh 设置了 XYZ_STEP 才会执行，平时自动跳过。
- * 和 App 用的是同一个 XyzApi，验证的是请求头、登录、token 刷新、数据接口这条链路。
- *
- * 输出里不打印 token，只打印是否成功和数量。
- */
+/** 真实登录验证：仅当 scripts/login-check.sh 设置 XYZ_STEP 时执行；输出不打印 token。 */
 class LoginCheck {
     private val step = System.getenv("XYZ_STEP")
     private val stateDir = File(System.getenv("XYZ_STATE_DIR") ?: ".logincheck")
 
-    /** 文件版 token 存储，权限 600，目录已加入 .gitignore */
+    /** 目录已 gitignore */
     private class FileTokens(private val file: File) : AuthTokens {
         private val p = Properties().apply { if (file.exists()) file.inputStream().use { load(it) } }
         private fun put(k: String, v: String?) {
@@ -40,14 +35,13 @@ class LoginCheck {
         override fun clear() { listOf("access", "refresh", "uid", "savedAt").forEach { p.remove(it) }; put("uid", null) }
     }
 
-    /** 可用环境变量 XYZ_APP_VERSION / XYZ_APP_BUILD 临时覆盖伪装的 App 版本 */
     private fun api(tokens: AuthTokens) = XyzApi(
         tokens,
         System.getenv("XYZ_APP_VERSION")?.takeIf { it.isNotBlank() } ?: XyzApi.APP_VERSION,
         System.getenv("XYZ_APP_BUILD")?.takeIf { it.isNotBlank() } ?: XyzApi.APP_BUILD,
     ).also { log("伪装 App 版本：${System.getenv("XYZ_APP_VERSION") ?: XyzApi.APP_VERSION}（build ${System.getenv("XYZ_APP_BUILD") ?: XyzApi.APP_BUILD}）") }
 
-    /** 最小 PNG 编码（8 位灰度）。安卓单测编译时没有 java.awt，所以手写 */
+    /** 安卓单测编译时没有 java.awt，只能手写最小 PNG 编码 */
     private fun grayPng(w: Int, h: Int, white: (Int, Int) -> Boolean): ByteArray {
         val raw = java.io.ByteArrayOutputStream()
         for (y in 0 until h) { raw.write(0); for (x in 0 until w) raw.write(if (white(x, y)) 255 else 0) }
@@ -75,14 +69,13 @@ class LoginCheck {
     private fun log(msg: String) = println("[登录验证] $msg")
     private fun mask(s: String?) = if (s.isNullOrEmpty()) "(空)" else "${s.take(2)}***（长度 ${s.length}）"
 
-    /** 扫码登录：终端里打印二维码，同时存一张 PNG 并自动打开；用手机小宇宙 App 扫码确认 */
     @Test
     fun qr() {
         assumeTrue(step == "qr")
         val tokens = FileTokens(File(stateDir, "tokens.properties"))
         tokens.clear()
         val api = api(tokens)
-        val deadline = System.currentTimeMillis() + 240_000 // 最多等 4 分钟（脚本整体 5 分钟上限）
+        val deadline = System.currentTimeMillis() + 240_000 // 脚本整体限 5 分钟
         var round = 0
         while (System.currentTimeMillis() < deadline) {
             round++
@@ -118,7 +111,7 @@ class LoginCheck {
 
     private fun showQr(url: String, round: Int) {
         val m = qrMatrix(url)
-        // 终端：上下两个模块合成一个字符（▀▄█），浅色模块用实心块，适合深色背景的终端
+        // 一个字符画上下两个模块；浅色模块用实心块，适配深色终端
         log("第 $round 个二维码，用手机小宇宙 App 扫码：")
         for (y in 0 until m.height step 2) {
             val line = StringBuilder()
@@ -129,7 +122,7 @@ class LoginCheck {
             }
             log(line.toString())
         }
-        // PNG：终端显示不正常时用这张图扫
+        // 终端二维码显示异常时的备用
         val scale = 10
         val w = m.width * scale
         val h = m.height * scale
@@ -147,11 +140,7 @@ class LoginCheck {
         checkWith(api(tokens), tokens)
     }
 
-    /**
-     * 只读探测：XYZ_PROBE 指向一个文件，每行一个请求「METHOD path [json body]」。
-     * 原始返回写到 .logincheck/probe/NN.json（gitignore），终端只打印状态和结构，不打印内容。
-     * 只用于读接口；不要放会改账号状态的接口。
-     */
+    /** 只读探测：XYZ_PROBE 文件每行「METHOD path [json body]」；原始返回只存 .logincheck/probe/，终端不打印内容。 */
     @Test
     fun probe() {
         assumeTrue(step == "probe")
@@ -160,7 +149,7 @@ class LoginCheck {
         val api = api(tokens)
         val spec = File(requireNotNull(System.getenv("XYZ_PROBE")) { "缺少 XYZ_PROBE" })
         val out = File(stateDir, "probe").apply { mkdirs() }
-        // 写接口一律拒绝（搜索接口名叫 create，但只是查询）
+        // 不拦 create：搜索接口叫 create 但只是查询
         val write = Regex("(update|delete|remove|add|follow|star|comment|logout|set)", RegexOption.IGNORE_CASE)
         runBlocking {
             spec.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.forEachIndexed { i, line ->
@@ -177,7 +166,6 @@ class LoginCheck {
         }
     }
 
-    /** 只读：打印发现页（为你推荐 / 编辑精选）和三个榜单的前几条，确认内容真实可用 */
     @Test
     fun show() {
         assumeTrue(step == "show")
@@ -195,14 +183,13 @@ class LoginCheck {
             }
             var key = more
             var page = 1
-            while (key != null && page < 6) { // 最多翻 5 页
+            while (key != null && page < 6) {
                 page++
                 val (secN, next) = api.discovery(key)
                 log("发现页第 $page 页：${secN.size} 个区块 ${secN.map { "${it.title}(${it.episodes.size + it.podcasts.size})" }}")
                 if (secN.isEmpty()) api.discoveryShape(key).lines().filter { it.isNotBlank() }.forEach { log("第 $page 页结构 ${it.take(400)}") }
                 key = next
             }
-            // 可播放性：对第一集的音频地址发 Range 请求，只取前 1KB
             sections.firstOrNull()?.episodes?.firstOrNull()?.let { e ->
                 val req = okhttp3.Request.Builder().url(e.audioUrl).header("Range", "bytes=0-1023").build()
                 okhttp3.OkHttpClient().newCall(req).execute().use { r ->
@@ -220,10 +207,7 @@ class LoginCheck {
         }
     }
 
-    /**
-     * 只读：导出一份公开内容快照给 debug 演示模式和界面截图用。
-     * 只含发现页、榜单、编辑精选、分类、节目和单集等公开内容；订阅、历史、进度都是编的，不含账号数据和 token。
-     */
+    /** 只导出公开内容；订阅、历史、进度是编的，不含账号数据和 token。 */
     @Test
     fun dump() {
         assumeTrue(step == "dump")
@@ -247,7 +231,7 @@ class LoginCheck {
                 api.podcast(pid).copy(subscribed = i < 6, starred = i < 2, hasUpdate = i in 1..3)
             }
             val podEps = pods.associate { p -> p.pid to api.episodes(p.pid, null).items.take(12).map { it.copy(progressSec = 0) } }
-            // 「历史」和「单集详情」要 shownotes：取几集补全详情，进度编一个
+            // 列表接口不带 shownotes，历史和单集详情要补全
             val detailed = picks.take(6).mapIndexed { i, e ->
                 val full = api.episode(e.eid)
                 full.copy(progressSec = if (i % 2 == 0) (full.durationSec * (0.2 + 0.15 * i)).toInt().coerceAtMost(full.durationSec - 60) else 0)
@@ -261,7 +245,7 @@ class LoginCheck {
             out.writeText(kotlinx.serialization.json.Json { prettyPrint = false; encodeDefaults = true }.encodeToString(com.ryan.xyzcar.data.DemoSnapshot.serializer(), snap))
             log("快照：${sections.size} 个区块、${pods.size} 个节目、${snap.editorPicks.size} 条精选、${tops.values.sumOf { it.size }} 条榜单 → ${out.relativeTo(root)}（${out.length() / 1024} KB）")
 
-            // 截图测试用的封面（Paparazzi 不能联网）
+            // Paparazzi 不能联网，封面先下到本地
             val covers = File(root, "app/src/test/resources/covers").apply { mkdirs() }
             val urls = (pods.map { it.coverUrl } + (snap.episodes + snap.editorPicks + tops.values.flatten() + podEps.values.flatten() + sections.flatMap { it.episodes }).map { it.coverUrl } +
                 sections.flatMap { it.podcasts }.map { it.coverUrl }).filter { it.startsWith("http") }.distinct()
@@ -278,7 +262,6 @@ class LoginCheck {
         }
     }
 
-    /** 登录后的链路：拉数据 → 主动刷新 token → 用新 token 再拉数据 */
     private fun checkWith(api: XyzApi, tokens: AuthTokens) = runBlocking {
         val subs = api.subscriptions(null)
         log("✅ 订阅列表：第一页 ${subs.items.size} 个节目")
@@ -301,7 +284,7 @@ class LoginCheck {
         val (sections, _) = api.discovery(null)
         log("✅ 发现页：${sections.size} 个区块")
         if (sections.isEmpty() || System.getenv("XYZ_SHAPE") != null) api.discoveryShape().lines().filter { it.isNotBlank() }.forEach { log("发现页结构 $it") }
-        // App 其他页面用到的只读接口：数量为 0 通常说明返回格式变了
+        // 数量为 0 通常说明返回格式变了
         val ep = history.items.firstOrNull()
         val extra = listOf<Pair<String, suspend () -> Int>>(
             "最热榜" to { api.topList("HOT_EPISODES_IN_24_HOURS").episodes.size },
@@ -328,6 +311,5 @@ class LoginCheck {
     }
 }
 
-/** 封面文件名：URL 的 SHA-1，截图测试按同样规则查找 */
 fun coverName(url: String): String =
     java.security.MessageDigest.getInstance("SHA-1").digest(url.toByteArray()).joinToString("") { "%02x".format(it) }.take(20)

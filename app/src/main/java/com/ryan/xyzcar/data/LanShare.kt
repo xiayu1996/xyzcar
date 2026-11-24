@@ -8,11 +8,7 @@ import java.net.SocketTimeoutException
 import java.security.SecureRandom
 import kotlin.concurrent.thread
 
-/**
- * 局域网分享：车机上临时开一个只读的 HTTP 服务，手机在同一网络里用浏览器打开网址就能拿到报告。
- * 网址带随机口令，只响应这一个路径；离开页面或 [MINUTES] 分钟后自动关闭。不经过任何第三方服务器。
- * 车机连手机热点、或手机连车机热点都行（两边在同一个网段）。
- */
+/** 临时只读 HTTP 服务：网址带随机口令，[MINUTES] 分钟后自动关闭，不经过任何第三方服务器 */
 object LanShare {
     const val MINUTES = 10
     private const val PORT = 8765
@@ -21,7 +17,6 @@ object LanShare {
 
     @Volatile private var server: ServerSocket? = null
 
-    /** 开始分享 [text]（再次调用会替换上一份）；没有局域网地址时返回 null */
     @Synchronized
     fun start(text: String): Session? {
         stop()
@@ -65,7 +60,7 @@ object LanShare {
         server = null
     }
 
-    /** 本机的局域网 IPv4（Wi-Fi 客户端或热点），不含回环和蜂窝网络的运营商地址 */
+    /** rmnet / ccmni 是蜂窝网卡，排除运营商地址 */
     fun lanAddresses(): List<String> = runCatching {
         NetworkInterface.getNetworkInterfaces().toList()
             .filter { it.isUp && !it.isLoopback && !it.name.startsWith("rmnet") && !it.name.startsWith("ccmni") }

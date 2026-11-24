@@ -88,12 +88,9 @@ import com.ryan.xyzcar.ui.theme.Dims
 import com.ryan.xyzcar.ui.theme.Xyz
 import com.ryan.xyzcar.ui.theme.parseHex
 
-/** 仅截图测试用：不联网时按 URL 直接提供封面图。App 里始终为 null，走 Coil 正常加载 */
+/** 仅截图测试用，离线按 URL 提供封面；App 里始终为 null */
 val LocalCoverOverride = androidx.compose.runtime.staticCompositionLocalOf<((String) -> androidx.compose.ui.graphics.ImageBitmap?)?> { null }
 
-// ---------------- 交互手感 ----------------
-
-/** 按下时轻微缩小、松手弹回（弹簧动画），所有可点的卡片和按钮都用 */
 @Composable
 fun Modifier.pressable(
     enabled: Boolean = true,
@@ -113,7 +110,6 @@ fun Modifier.pressable(
         .clickable(source, indication = androidx.compose.material3.ripple(), enabled = enabled, role = role, onClick = onClick)
 }
 
-/** 卡片：圆角 + 柔和投影（深色模式不投影，用描边） */
 fun Modifier.card(shape: Shape, bg: Color, shadow: Color, border: Color?, elevation: Dp = 12.dp): Modifier =
     this
         .then(if (shadow.alpha > 0f) Modifier.shadow(elevation, shape, ambientColor = shadow, spotColor = shadow) else Modifier)
@@ -121,9 +117,6 @@ fun Modifier.card(shape: Shape, bg: Color, shadow: Color, border: Color?, elevat
         .background(bg)
         .then(if (border != null) Modifier.border(1.dp, border, shape) else Modifier)
 
-// ---------------- 封面 ----------------
-
-/** 封面：小圆角 + 柔和投影；没有图片时用节目主题色铺底、显示标题首字 */
 @Composable
 fun Cover(url: String, size: Dp, modifier: Modifier = Modifier, title: String = "", color: ThemeColor? = null, radius: Dp? = null) {
     val shape = RoundedCornerShape(radius ?: (size.value * 0.1f).coerceAtLeast(6f).dp)
@@ -156,12 +149,6 @@ fun Cover(url: String, size: Dp, modifier: Modifier = Modifier, title: String = 
     }
 }
 
-// ---------------- 按钮 ----------------
-
-/**
- * 圆形图标按钮，触控区域不小于 72dp。
- * primary：强调色实心；plain：无底色；tinted：浅青底 + 青色图标；默认：浅灰底。
- */
 @Composable
 fun RoundIconButton(
     icon: ImageVector,
@@ -199,10 +186,6 @@ fun RoundIconButton(
     }
 }
 
-/**
- * 播放键：浅青圆底 + 青色三角；有收听进度时外圈是进度环（官方「更新」列表的样式）。
- * 进度变化、播放 / 暂停切换都有动画。
- */
 @Composable
 fun PlayButton(
     playing: Boolean,
@@ -239,7 +222,6 @@ fun PlayButton(
     }
 }
 
-/** 胶囊按钮。secondary：浅底；tinted：浅青底 + 深青字 */
 @Composable
 fun BigButton(
     text: String,
@@ -273,9 +255,6 @@ fun BigButton(
     }
 }
 
-/**
- * 入口色块（官方「发现」页顶部那排）：浅色块 + 同色系描边和文字。
- */
 @Composable
 fun ColorChip(text: String, chroma: Chroma, icon: ImageVector? = null, onClick: () -> Unit) {
     Row(
@@ -296,7 +275,6 @@ fun ColorChip(text: String, chroma: Chroma, icon: ImageVector? = null, onClick: 
     }
 }
 
-/** 筛选胶囊：选中浅青底 + 深青粗字，未选中浅灰底 + 灰字；颜色切换有渐变 */
 @Composable
 fun Chip(text: String, selected: Boolean = false, icon: ImageVector? = null, onClick: () -> Unit) {
     val x = Xyz
@@ -319,9 +297,6 @@ fun Chip(text: String, selected: Boolean = false, icon: ImageVector? = null, onC
     }
 }
 
-// ---------------- 标题 ----------------
-
-/** 页面大标题（粗黑 40sp），二级页面左侧带返回 */
 @Composable
 fun ScreenHeader(title: String, onBack: (() -> Unit)?, actions: @Composable RowScope.() -> Unit = {}) {
     Row(
@@ -342,7 +317,6 @@ fun ScreenHeader(title: String, onBack: (() -> Unit)?, actions: @Composable RowS
     }
 }
 
-/** 分区标题：品牌青色（官方「为你推荐」「编辑精选」） */
 @Composable
 fun SectionTitle(text: String, action: String? = null, onAction: (() -> Unit)? = null) {
     Row(
@@ -361,9 +335,7 @@ fun SectionTitle(text: String, action: String? = null, onAction: (() -> Unit)? =
     }
 }
 
-/**
- * 加载中 / 出错 / 空 / 内容几种状态之间淡入淡出，不硬切。[phase] 只用来区分状态，内容照常读最新数据
- */
+/** [phase] 只用来区分状态，内容照常读最新数据 */
 @Composable
 fun Swap(phase: Int, modifier: Modifier = Modifier, content: @Composable (Int) -> Unit) {
     androidx.compose.animation.AnimatedContent(
@@ -375,7 +347,6 @@ fun Swap(phase: Int, modifier: Modifier = Modifier, content: @Composable (Int) -
     ) { content(it) }
 }
 
-/** 列表页通用的四种状态：0 加载中 1 出错 2 空 3 有内容 */
 fun loadPhase(loading: Boolean, error: Boolean, empty: Boolean): Int = when {
     loading -> 0
     error -> 1
@@ -383,9 +354,6 @@ fun loadPhase(loading: Boolean, error: Boolean, empty: Boolean): Int = when {
     else -> 3
 }
 
-// ---------------- 列表行 ----------------
-
-/** 关键词高亮（搜索结果）：高亮词用强调色 + 粗体 */
 fun highlight(text: String, words: List<String>, color: Color): AnnotatedString = buildAnnotatedString {
     if (words.isEmpty()) { append(text); return@buildAnnotatedString }
     val re = Regex(words.filter { it.isNotBlank() }.joinToString("|") { Regex.escape(it) }, RegexOption.IGNORE_CASE)
@@ -398,7 +366,7 @@ fun highlight(text: String, words: List<String>, color: Color): AnnotatedString 
     append(text.substring(last))
 }
 
-/** 「在听 · 剩 12 分钟」这类状态：在听用强调色，其他用灰色 */
+/** second 为 true 时用强调色（在听） */
 fun episodeMeta(ep: Episode, showPodcast: Boolean, showDate: Boolean = true): Pair<String, Boolean> {
     if (ep.paid) return "付费单集 · 暂不支持播放" to false
     val listening = ep.progressSec > 0 && ep.durationSec > 0 && ep.progressSec < ep.durationSec - 30 && !ep.finished
@@ -412,9 +380,6 @@ fun episodeMeta(ep: Episode, showPodcast: Boolean, showDate: Boolean = true): Pa
     ).joinToString(" · ") to false
 }
 
-/**
- * 单集行（官方「更新」「为你推荐」的样式）：播放键（带进度环，靠驾驶位放行首）| 封面 | 节目名（灰）/ 标题（两行）/ 状态 | 加入播放列表。
- */
 @Composable
 fun EpisodeRow(
     ep: Episode,
@@ -438,7 +403,7 @@ fun EpisodeRow(
                 .alpha(if (ep.paid) 0.55f else 1f)
                 .padding(vertical = 10.dp, horizontal = 4.dp),
         ) {
-            // 播放键在行首：靠驾驶位一侧，不用越过整行去按
+            // 播放键放行首，靠驾驶位一侧
             val ring = if (ep.durationSec > 0 && ep.progressSec > 0) ep.progressSec.toFloat() / ep.durationSec else null
             PlayButton(playing = playing, progress = ring, onClick = onPlay, enabled = !ep.paid)
             Spacer(Modifier.width(10.dp))
@@ -499,9 +464,6 @@ fun PodcastRow(p: Podcast, highlightWords: List<String> = emptyList(), trailing:
     }
 }
 
-// ---------------- 状态 ----------------
-
-/** 大号错误提示 + 重试按钮（不用小号 Toast） */
 @Composable
 fun ErrorBox(message: String, onRetry: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
@@ -518,7 +480,6 @@ fun EmptyBox(text: String) {
     }
 }
 
-/** 骨架屏：加载中占位，明暗呼吸 */
 @Composable
 fun SkeletonRows(count: Int = 5) {
     val t = rememberInfiniteTransition(label = "skeleton")
@@ -540,7 +501,6 @@ fun SkeletonRows(count: Int = 5) {
     }
 }
 
-/** 列表：滚动到底自动加载更多 */
 @Composable
 fun AutoLoadList(
     state: LazyListState,
@@ -569,11 +529,9 @@ fun AutoLoadList(
     }
 }
 
-/** 分隔线（官方列表行之间很淡的线） */
 @Composable
 fun Hairline(modifier: Modifier = Modifier) = Box(modifier.fillMaxWidth().height(1.dp).background(Xyz.line))
 
-/** 小标签（「已订阅」「付费」） */
 @Composable
 fun Tag(text: String, bg: Color, fg: Color) {
     Surface(color = bg, contentColor = fg, shape = RoundedCornerShape(8.dp)) {

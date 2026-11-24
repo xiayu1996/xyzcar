@@ -34,14 +34,8 @@ import com.ryan.xyzcar.player.PlayerUi
 import com.ryan.xyzcar.ui.theme.Xyz
 import kotlinx.coroutines.delay
 
-/** 提示条的内容：[action] 是按钮文字 */
 data class AutoNextNotice(val label: String, val title: String, val action: String, val swap: Boolean)
 
-/**
- * 自动续播提示条，放在迷你播放条上方（全屏播放页里放顶部）：
- * - 单集剩 15 秒：「接下来：…」+「不要自动播」
- * - 自动接上后 10 秒内：「已自动播放：…」+「换一集」（和方向盘「下一曲」一样）
- */
 @Composable
 fun AutoNextBanner(state: PlayerUi, queueSize: Int, onCancel: (String) -> Unit, onSwap: () -> Unit, modifier: Modifier = Modifier) {
     val plan by AutoNext.plan.collectAsState()
@@ -69,7 +63,7 @@ fun AutoNextBanner(state: PlayerUi, queueSize: Int, onCancel: (String) -> Unit, 
     }
 }
 
-/** 无状态的提示条：按钮在左（驾驶位一侧），文字在右；截图测试直接用 */
+/** 按钮在左（驾驶位一侧）；无状态，截图测试直接用 */
 @Composable
 fun AutoNextBar(n: AutoNextNotice, onAction: () -> Unit) {
     val x = Xyz

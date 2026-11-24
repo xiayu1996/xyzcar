@@ -27,11 +27,6 @@ import com.ryan.xyzcar.ui.components.ScreenHeader
 
 private const val MS = 360
 
-/**
- * 转场：
- * - 进入下一级：新页面从右侧滑入，旧页面向左轻移并淡出；返回时反过来
- * - 切换主入口：按导航顺序上下滑动 + 淡入淡出（和左侧竖向导航的方向一致）
- */
 private fun AnimatedContentTransitionScope<Route>.transition(dir: NavDir): ContentTransform {
     val ease = tween<androidx.compose.ui.unit.IntOffset>(MS, easing = FastOutSlowInEasing)
     val fade = tween<Float>(MS - 60)
@@ -47,7 +42,6 @@ private fun AnimatedContentTransitionScope<Route>.transition(dir: NavDir): Conte
     }
 }
 
-/** 内容区：按当前路由显示页面，切换时有转场动画 */
 @Composable
 fun ContentArea(vm: AppViewModel) {
     AnimatedContent(
@@ -80,7 +74,6 @@ fun ContentArea(vm: AppViewModel) {
     }
 }
 
-/** 单集行的通用操作：打开详情 / 播放（正在播放的那集再点是暂停）/ 加入队列 */
 class EpisodeActions(private val vm: AppViewModel) {
     fun open(ep: Episode) = vm.push(Route.EpisodeDetail(ep))
     fun play(ep: Episode) {

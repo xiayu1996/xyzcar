@@ -34,7 +34,6 @@ data class PlayerUi(
     val connected: Boolean = false,
 )
 
-/** 界面侧的播放控制：连接 PlaybackService 的 MediaSession */
 class PlayerConnection(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val app = App.instance
@@ -47,20 +46,16 @@ class PlayerConnection(private val context: Context) {
     )
     val state: StateFlow<PlayerUi> = _state.asStateFlow()
 
-    /**
-     * 列表只关心「哪一集在出声」和「哪一集是当前单集」：单独拿出来，不跟着每 0.5 秒的进度变化，
-     * 播放时列表页就不用一秒重组两次
-     */
+    /** 不跟随每 0.5 秒的进度变化，播放时列表页不用一秒重组两次 */
     val playingEid: StateFlow<String?> = _state.map { if (it.isPlaying) it.episode?.eid else null }
         .distinctUntilChanged().stateIn(scope, SharingStarted.Eagerly, null)
     val currentEid: StateFlow<String?> = _state.map { it.episode?.eid }
         .distinctUntilChanged().stateIn(scope, SharingStarted.Eagerly, _state.value.episode?.eid)
 
-    /** 定时关闭：到点的时间（elapsedRealtime 毫秒），null 表示没开 */
+    /** elapsedRealtime 毫秒，null 表示没开 */
     val sleepEndsAt = MutableStateFlow<Long?>(null)
     private var sleepJob: kotlinx.coroutines.Job? = null
 
-    /** 定时关闭：关 → 15 → 30 → 60 分钟 → 关 */
     fun cycleSleep() {
         val left = sleepEndsAt.value?.let { (it - android.os.SystemClock.elapsedRealtime()) / 60_000 }
         val next = when {
@@ -82,7 +77,6 @@ class PlayerConnection(private val context: Context) {
         }
     }
 
-    /** 一次性提示（例如音频地址取不到） */
     val messages = MutableStateFlow<String?>(null)
 
     init {
@@ -117,12 +111,7 @@ class PlayerConnection(private val context: Context) {
         )
     }
 
-    /**
-     * 续播前对齐服务端（F6 / F7）：
-     * 1. 手机上最近听的是另一集，且比车上更新 → 面板切到那一集（不自动播放）
-     * 2. 同一集但手机上听得更远 → 跳到服务端进度
-     * 本地还有没补发的进度时以本地为准。
-     */
+    /** 手机上后来听了另一集就切过去（不自动播），同一集则对齐服务端进度；本地有未补发进度时以本地为准 */
     private suspend fun syncWithServer() {
         val c = controller ?: return
         if (c.isPlaying) return
@@ -150,16 +139,13 @@ class PlayerConnection(private val context: Context) {
         }
     }
 
-    /** 自动续播提示条：「不要自动播」→ 这一集播完就停 */
     fun cancelAutoNext(afterEid: String) {
         AutoNext.cancelledAfter.value = afterEid
         AutoNext.plan.value = null
     }
 
-    /** 自动续播提示条：「换一集」 */
     fun swapAutoNext() { PlaybackService.current?.swapAuto(); refresh() }
 
-    /** 切换账号后：面板换成新账号上次播放的单集，再对齐服务端 */
     fun reloadAccount() {
         _state.value = app.local.lastPlayed?.let {
             PlayerUi(episode = it.episode, positionMs = it.positionMs, durationMs = it.episode.durationSec * 1000L, speed = app.local.speed, connected = controller != null)
@@ -168,7 +154,7 @@ class PlayerConnection(private val context: Context) {
         scope.launch { delay(300); refresh(); syncWithServer() }
     }
 
-    /** 回到前台：如果没在播放，对齐服务端进度（手机上可能听过） */
+    /** 手机上可能听过：回到前台时对齐服务端进度 */
     fun onForeground() {
         scope.launch {
             runCatching { app.repo.flushPendingProgress() }
@@ -193,7 +179,6 @@ class PlayerConnection(private val context: Context) {
         }
     }
 
-    /** 从指定位置播放（shownotes 时间戳）：当前单集直接跳，否则先切换单集 */
     fun playAt(ep: Episode, ms: Long) {
         val c = controller ?: return
         if (c.currentMediaItem?.mediaId == ep.eid && c.mediaItemCount > 0) {
@@ -240,7 +225,6 @@ class PlayerConnection(private val context: Context) {
         refresh()
     }
 
-    /** 点一下切下一档倍速 */
     fun cycleSpeed() {
         val c = controller ?: return
         val cur = c.playbackParameters.speed
@@ -254,7 +238,6 @@ class PlayerConnection(private val context: Context) {
     }
 
     companion object {
-        /** 1.0 → 1.25 → 1.5 → 2.0 → 0.8 → 1.0（PRD 要求 0.8–2.0） */
         val SPEEDS = listOf(0.8f, 1.0f, 1.25f, 1.5f, 2.0f)
     }
 }

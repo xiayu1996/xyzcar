@@ -12,10 +12,7 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 
-/**
- * 应用内整包更新：Gitee 发行版优先（国内稳定），失败再用 GitHub Releases。
- * 安装包和同名 .sha256 由 CI 同时发布到两边，下载后必须校验一致才允许安装。
- */
+/** Gitee 优先（国内稳定），失败再用 GitHub；安装包必须和 CI 同时发布的 .sha256 一致才允许安装 */
 class Updater(
     private val http: OkHttpClient,
     private val dir: File,
@@ -28,10 +25,9 @@ class Updater(
         val apkName get() = "xyzcar-$version.apk"
     }
 
-    /** 各个源上次的 ETag 和返回内容：再查时带 If-None-Match，没有新版本时服务端回 304，不用重新下载内容 */
+    /** 各源上次的 ETag 和内容，用于 If-None-Match / 304 */
     private val metaDir = File(dir, "meta")
 
-    /** 依次询问各个源，第一个成功的为准；全部失败时抛出合并后的原因 */
     fun latest(): Release {
         val errors = mutableListOf<String>()
         for (s in sources) {
@@ -44,7 +40,6 @@ class Updater(
         throw IOException(errors.joinToString("；"))
     }
 
-    /** 下载并校验安装包，返回可安装的文件；某个源失败或校验不一致就换下一个 */
     fun download(r: Release, onProgress: (Float) -> Unit): File {
         dir.mkdirs()
         val out = File(dir, r.apkName)
@@ -71,7 +66,6 @@ class Updater(
         throw IOException(errors.joinToString("；"))
     }
 
-    /** 条件请求：有上次的 ETag 和内容才带 If-None-Match；304 就用上次的内容 */
     private fun getLatest(s: Source): String {
         val key = s.name.lowercase().filter { it.isLetterOrDigit() }
         val bodyFile = File(metaDir, "$key.json")
@@ -148,7 +142,7 @@ class Updater(
             Release(tag, cleanNotes(o["body"]?.jsonPrimitive?.content.orEmpty()))
         }.getOrNull()
 
-        /** 版本号按数字逐段比较，如 0.0.10 > 0.0.9 */
+        /** 按数字逐段比较：0.0.10 > 0.0.9 */
         fun isNewer(remote: String, current: String): Boolean {
             val a = remote.removePrefix("v").split('.').map { it.toIntOrNull() ?: 0 }
             val b = current.removePrefix("v").split('.').map { it.toIntOrNull() ?: 0 }
@@ -161,7 +155,7 @@ class Updater(
 
         fun parseSha(text: String): String? = Regex("^[0-9a-fA-F]{64}").find(text.trim())?.value?.lowercase()
 
-        /** 发布说明去掉 Markdown 标题、作者链接和 Full Changelog 行，列表改成圆点 */
+        /** 去掉标题、作者链接和 Full Changelog 行，列表改成圆点 */
         fun cleanNotes(body: String): String = body.lines()
             .map { it.trim() }
             .filter { it.isNotEmpty() && !it.startsWith("#") && !it.startsWith("**Full Changelog") }
@@ -185,7 +179,7 @@ class Updater(
 
         fun canInstall(ctx: Context) = ctx.packageManager.canRequestPackageInstalls()
 
-        /** 发起安装本应用的应用（侧载时通常是车机的文件管理）；读不到返回 null */
+        /** 侧载时通常是车机的文件管理 */
         fun selfInstaller(ctx: Context): String? = runCatching {
             val pm = ctx.packageManager
             if (android.os.Build.VERSION.SDK_INT >= 30) pm.getInstallSourceInfo(ctx.packageName).let { it.initiatingPackageName ?: it.installingPackageName }
@@ -195,10 +189,7 @@ class Updater(
         private val SYSTEM_INSTALLERS = Regex("packageinstaller|^android$|^com\\.android\\.shell$")
         private val FILE_MANAGER_PKG = Regex("file(manager|explorer|browser)|documentsui", RegexOption.IGNORE_CASE)
 
-        /**
-         * 车机的文件管理：优先用当初装本应用的那个应用，其次找启动器里名字带「文件」的。
-         * 比亚迪车机只给自带的文件管理开了安装权限，本应用自己装不了（设置里也没有开关）。
-         */
+        /** 比亚迪车机只给自带的文件管理开了安装权限，本应用自己装不了（设置里也没有开关） */
         fun fileManagerIntent(ctx: Context): Intent? = runCatching {
             val pm = ctx.packageManager
             selfInstaller(ctx)?.takeUnless { SYSTEM_INSTALLERS.containsMatchIn(it) }?.let { pm.getLaunchIntentForPackage(it) }

@@ -2,7 +2,7 @@ package com.ryan.xyzcar.data
 
 import kotlinx.serialization.Serializable
 
-/** 节目主题色（接口 color 字段，取自封面）：original 原色，light / dark 是深浅两种变体 */
+/** 接口 color 字段，取自封面 */
 @Serializable
 data class ThemeColor(val original: String = "", val light: String = "", val dark: String = "")
 
@@ -35,34 +35,27 @@ data class Episode(
     val audioUrl: String = "",
     val coverUrl: String = "",
     val playCount: Int = 0,
-    /** 服务端记录的播放进度（秒），列表展示用 */
+    /** 服务端记录的进度（秒） */
     val progressSec: Int = 0,
-    /** 所属节目的主题色 */
     val color: ThemeColor? = null,
-    /** 付费单集（payType 不是 FREE），第三方客户端拿不到音频 */
+    /** payType 不是 FREE，第三方客户端拿不到音频 */
     val paid: Boolean = false,
-    /** 服务端标记已听完 */
     val finished: Boolean = false,
-    /** 文字稿的媒体 id（接口 transcript.mediaId）；空 = 这一集没有文字稿 */
+    /** 空表示没有文字稿 */
     val transcriptMediaId: String = "",
 )
 
-/** 文字稿的一句：从 [startMs] 开始说 [text] */
 data class TranscriptLine(val startMs: Long, val text: String)
 
-/**
- * 列表里用的精简单集：去掉 shownotes（HTML，常有几 KB），简介只留开头。
- * 列表要缓存很多集，完整内容等打开单集详情时再取
- */
+/** 列表要缓存很多集，去掉常有几 KB 的 shownotes、截短简介，完整内容打开详情时再取 */
 fun Episode.lite(): Episode = if (shownotes.isEmpty() && description.length <= LITE_DESC) this
     else copy(shownotes = "", description = description.take(LITE_DESC))
 
 private const val LITE_DESC = 300
 
-/** 未听或在听（没听完）：「订阅」页的筛选和自动续播共用 */
 fun Episode.isTodo(): Boolean = !finished && !(durationSec > 0 && progressSec >= durationSec - 30)
 
-/** 当前账号：只取昵称和头像（接口还返回手机号等，一律不解析、不保存） */
+/** 接口还返回手机号等，一律不解析、不保存 */
 @Serializable
 data class User(
     val uid: String,
@@ -70,10 +63,10 @@ data class User(
     val avatarUrl: String = "",
 )
 
-/** 分页结果：items + 下一页的游标（原样保存 loadMoreKey 的 JSON） */
+/** loadMoreKey 原样保存接口返回的 JSON */
 data class Page<T>(val items: List<T>, val loadMoreKey: kotlinx.serialization.json.JsonElement?)
 
-/** 发现页的一个区块；[topCategory] 非空时是榜单（接口的 category） */
+/** [topCategory] 非空时是榜单 */
 @Serializable
 data class DiscoverySection(
     val title: String,
@@ -82,18 +75,15 @@ data class DiscoverySection(
     val topCategory: String = "",
 )
 
-/** 三个单集榜单：接口 category → 名称 */
 val TOP_LIST_TITLES = linkedMapOf(
     "HOT_EPISODES_IN_24_HOURS" to "最热榜",
     "SKYROCKET_EPISODES" to "锋芒榜",
     "NEW_STAR_EPISODES" to "新星榜",
 )
 
-/** iconUrl：接口给的分类图标（运行时加载，不打包进 App） */
 @Serializable
 data class Category(val id: String, val name: String, val iconUrl: String = "")
 
 data class TopList(val title: String, val category: String, val episodes: List<Episode>, val podcasts: List<Podcast>)
 
-/** highlight：服务端给的高亮词 */
 data class SearchResult(val podcasts: List<Podcast>, val episodes: List<Episode>, val highlight: List<String> = emptyList())

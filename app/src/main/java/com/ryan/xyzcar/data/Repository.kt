@@ -14,18 +14,13 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
-/**
- * 数据仓库：缓存、节流、进度同步。
- * - 列表内存缓存 5 分钟，订阅列表另存磁盘，弱网时可以浏览
- * - 进度上报失败先存本地，下次上报时一起补发
- */
 class Repository(
     val api: XyzApi,
     private val local: LocalStore,
     private val tokens: TokenStore,
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    /** 最近用过的 [MAX_CACHED] 份列表（按访问顺序淘汰），过期的写入时顺手清掉 */
+    /** accessOrder = true：按访问顺序淘汰；过期项在写入时清掉 */
     private val memCache = object : LinkedHashMap<String, Pair<Long, Any>>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, Any>>?) = size > MAX_CACHED
     }
@@ -48,33 +43,26 @@ class Repository(
         memCache.keys.removeAll { it.startsWith(prefix) }
     }
 
-    /** 界面退到后台（只在后台播放）时放掉列表缓存；页面自己的状态还在，回来不会白屏 */
+    /** 页面自己的状态还在，放掉列表缓存回来也不会白屏 */
     fun trimMemory() {
         synchronized(memCache) { memCache.clear() }
         transcriptCache = null
     }
 
-    /** debug 包的演示模式：返回样例数据，用于界面截图 */
     var demo = false
 
     val isLoggedIn get() = tokens.isLoggedIn
 
-    // ---------- 多账号 ----------
-
     val accountId: String? get() = tokens.activeId
     fun accounts(): List<Account> = tokens.accounts()
 
-    /**
-     * 切到 [id]（null = 暂时没有当前账号，用于添加账号的登录页）。
-     * 和进度上报、token 刷新互斥：切换前发出的上报和刷新都落在旧账号上。只改当前槽位，不刷新 token
-     */
+    /** null 用于添加账号的登录页；加锁让切换前发出的上报和 token 刷新落在旧账号上；不刷新 token */
     suspend fun switchAccount(id: String?) {
         progressLock.withLock { api.withAuthLock { tokens.activate(id) } }
         memCache.clear()
         profileCache = null
     }
 
-    /** 删除账号和它的本地数据（播放列表、续播点、待补发进度）。删的是当前账号时，之后没有当前账号 */
     suspend fun removeAccount(id: String) {
         progressLock.withLock { api.withAuthLock { tokens.remove(id) } }
         local.dropAccount(id)
@@ -82,7 +70,7 @@ class Repository(
         profileCache = null
     }
 
-    /** 扫码登录成功后：取资料写进槽位；同一个人已经在列表里就并回原槽位。返回失败原因，成功返回 null */
+    /** 成功返回 null，失败返回原因 */
     suspend fun finishLogin(): Throwable? {
         val id = tokens.activeId ?: return null
         val user = runCatching { api.profile() }.getOrElse { return it }
@@ -102,8 +90,6 @@ class Repository(
         memCache.clear()
         profileCache = null
     }
-
-    // ---------- 订阅（按最新单集排序，和官方一致） ----------
 
     data class SubscriptionPage(val items: List<Podcast>, val loadMoreKey: JsonElement?, val fromDisk: Boolean = false)
 
@@ -128,12 +114,9 @@ class Repository(
     suspend fun setSubscribed(pid: String, on: Boolean): Podcast? = if (demo) null else api.updateSubscription(pid, on).also { invalidate("subs") }
     suspend fun setStarred(pid: String, star: Boolean): Podcast? = if (demo) null else api.updateStar(pid, star).also { invalidate("subs") }
 
-    // ---------- 节目 / 单集 ----------
-
     suspend fun podcast(pid: String, force: Boolean = false): Podcast =
         if (demo) (DemoData.podcasts.firstOrNull { it.pid == pid } ?: DemoData.allEpisodes().firstOrNull { it.pid == pid }?.let { e -> Podcast(e.pid, e.podcastTitle, "", "", e.coverUrl, color = e.color) } ?: DemoData.podcasts.first()) else cached("pod:$pid", force) { api.podcast(pid) }
 
-    /** 单集列表 + 合并服务端已听进度 */
     suspend fun episodes(pid: String, key: JsonElement?): Page<Episode> {
         if (demo) return Page(DemoData.podcastEpisodes[pid] ?: DemoData.allEpisodes().filter { it.pid == pid }.ifEmpty { DemoData.episodes }, null)
         val page = if (key == null) cached("eps:$pid", false) { api.episodes(pid, null) } else api.episodes(pid, key)
@@ -149,12 +132,10 @@ class Repository(
     suspend fun episode(eid: String): Episode =
         if (demo) (DemoData.allEpisodes().firstOrNull { it.eid == eid } ?: DemoData.episodes.first()) else cached("ep:$eid", false) { api.episode(eid) }
 
-    /** 打开单集前读取服务端进度（秒）；没有记录返回 null */
     suspend fun serverProgress(ep: Episode): Int? = api.progress(listOf(ep.eid))[ep.eid]
 
     data class LatestPlayed(val episode: Episode, val progressSec: Int, val playedAtMs: Long)
 
-    /** 服务端最近收听的单集（跨设备续播用） */
     suspend fun latestPlayed(): LatestPlayed? {
         val ep = api.history(null).items.firstOrNull() ?: return null
         val (progress, playedAt) = api.progressWithTime(listOf(ep.eid))[ep.eid] ?: return null
@@ -162,9 +143,9 @@ class Repository(
         return LatestPlayed(ep, progress, ts)
     }
 
-    /** 播放前补齐音频地址（列表接口有时不带 enclosure） */
+    /** 列表接口有时不带 enclosure，播放前补齐 */
     suspend fun ensurePlayable(ep: Episode): Episode {
-        // 列表里的单集不带 shownotes（见 lite()），播放用不到，有音频地址和节目名就直接播，不多等一次请求
+        // 列表单集不带 shownotes（见 lite()），但播放用不到，不多等一次请求
         if (ep.audioUrl.isNotEmpty() && ep.podcastTitle.isNotEmpty()) return ep
         val full = runCatching { episode(ep.eid) }.getOrNull() ?: return ep
         return full.copy(
@@ -175,13 +156,11 @@ class Repository(
         )
     }
 
-    // ---------- 文字稿 ----------
-
     private class CachedTranscript(val eid: String, val lines: List<TranscriptLine>)
-    /** 只留当前这一集的（一集几百句、上百 KB），不进列表缓存 */
+    /** 一集上百 KB，只留当前这一集，不进列表缓存 */
     @Volatile private var transcriptCache: CachedTranscript? = null
 
-    /** 单集文字稿；没有返回空列表。mediaId 从单集详情取（播放器里的单集对象不一定带） */
+    /** mediaId 从单集详情取：播放器里的单集对象不一定带 */
     suspend fun transcript(eid: String): List<TranscriptLine> {
         if (demo) return DemoData.transcript()
         transcriptCache?.takeIf { it.eid == eid }?.let { return it.lines }
@@ -191,16 +170,14 @@ class Repository(
         return lines
     }
 
-    // ---------- 进度同步 ----------
-
     private val playedAtFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
 
-    /** [account]：调用方在拿到进度的那一刻记下的账号；已经切走了就先记在那个账号名下，切回来再补发 */
+    /** [account] 是取到进度那一刻的账号；已经切走就记在它名下，切回来再补发 */
     suspend fun reportProgress(ep: Episode, progressSec: Int, account: String? = tokens.activeId) = progressLock.withLock {
         if (ep.pid.isEmpty() || progressSec < 0 || account == null) return@withLock
         val item = PendingProgress(ep.eid, ep.pid, progressSec, playedAtFmt.format(Instant.now()))
         if (account != tokens.activeId) {
-            if (account !in tokens.ids) return@withLock // 账号已删除
+            if (account !in tokens.ids) return@withLock
             local.setPendingProgressOf(account, (local.pendingProgressOf(account).filter { it.eid != ep.eid } + item).takeLast(50))
             return@withLock
         }
@@ -209,7 +186,7 @@ class Repository(
             api.updateProgress(batch)
             local.pendingProgress = emptyList()
         } catch (e: Exception) {
-            local.pendingProgress = batch // 失败先存本地，下次补发
+            local.pendingProgress = batch
         }
     }
 
@@ -219,20 +196,15 @@ class Repository(
         runCatching { api.updateProgress(pending) }.onSuccess { local.pendingProgress = emptyList() }
     }
 
-    // ---------- 订阅更新 ----------
-
-    /** 订阅更新 + 服务端进度（用来区分未听 / 在听 / 已听完） */
+    /** 合并服务端进度，用来区分未听 / 在听 / 已听完 */
     suspend fun inbox(key: JsonElement?, force: Boolean = false): Page<Episode> {
         if (demo) return Page(DemoData.allEpisodes().take(12), null)
         val page = if (key == null) cached("inbox", force) { api.inbox(null) } else api.inbox(key)
         return Page(withProgress(page.items), page.loadMoreKey)
     }
 
-    // ---------- 账号 ----------
-
     @Volatile private var profileCache: User? = null
 
-    /** 昵称和头像：每次启动只请求一次 */
     suspend fun profile(): User {
         profileCache?.let { return it }
         if (demo) return User("demo", "演示账号").also { profileCache = it }
@@ -242,22 +214,18 @@ class Repository(
         }
     }
 
-    // ---------- 历史 ----------
-
     suspend fun history(key: JsonElement?): Page<Episode> {
         if (demo) return Page(DemoData.episodes.filter { it.progressSec > 0 } + DemoData.episodes.take(3), null)
         val page = if (key == null) cached("history", true) { api.history(null) } else api.history(key)
         return Page(withProgress(page.items), page.loadMoreKey)
     }
 
-    // ---------- 发现 ----------
-
     suspend fun discovery(force: Boolean): List<DiscoverySection> =
         if (demo) withFullLists(DemoData.sections, { DemoData.topLists[it].orEmpty() }, { DemoData.editorPicks })
         else cached("discovery", force) {
             val all = mutableListOf<DiscoverySection>()
             var key: String? = null
-            // 发现流按区块 token 分段返回，最多拉 4 段
+            // 发现流按区块 token 分段返回
             for (i in 0 until 4) {
                 val (sections, next) = api.discovery(key)
                 all += sections
@@ -267,10 +235,7 @@ class Repository(
             withFullLists(all.distinctBy { it.title }, { topList(it, force).episodes }, { editorPicksFirst(force) })
         }
 
-    /**
-     * 发现流里每个榜单、编辑精选都只给 3 集（2026-11 实测），完整接口各有 15 集：并行换成完整列表。
-     * 哪个取不到就保留发现流里的 3 集，不影响整页
-     */
+    /** 发现流里榜单、编辑精选只给 3 集（2026-11 实测），完整接口有 15 集；取不到就保留原来的 3 集 */
     private suspend fun withFullLists(
         sections: List<DiscoverySection>,
         top: suspend (String) -> List<Episode>,
@@ -301,14 +266,14 @@ class Repository(
     suspend fun editorPicks(key: JsonElement?): Page<Episode> = if (demo) Page(DemoData.editorPicks, null) else api.editorPicks(key)
     suspend fun newEpisodes(): List<Episode> = if (demo) DemoData.episodes else cached("pilot", false) { api.newEpisodesSquare() }
     suspend fun categories(): List<Category> = if (demo) DemoData.categories else cached("cats", false) { api.categories() }
-    /** 「推荐」页的「综合」：发现页的「为你推荐」 */
+    /** 「推荐」页的「综合」即发现页的「为你推荐」 */
     suspend fun recommend(force: Boolean): List<Episode> =
         discovery(force).firstOrNull { it.episodes.isNotEmpty() }?.episodes.orEmpty()
 
     /** 「换一批」：只在用户点按钮时调用 */
     suspend fun refreshRecommend(): List<Episode> = if (demo) DemoData.allEpisodes().shuffled().take(3) else api.refreshRecommend()
 
-    /** 某个分类下的推荐单集（RECOMMEND 为你推荐 / HOT 近期热门） */
+    /** [tab]：RECOMMEND 为你推荐 / HOT 近期热门 */
     suspend fun categoryEpisodes(id: String, tab: String, force: Boolean = false): List<Episode> =
         if (demo) DemoData.allEpisodes().let { all -> all.drop(id.hashCode().mod(maxOf(1, all.size - 6))).take(8) }
         else cached("catEps:$id:$tab", force) { api.categoryEpisodes(id, tab) }
@@ -318,12 +283,7 @@ class Repository(
     suspend fun categoryPodcasts(id: String, tab: String, key: JsonElement?): Page<Podcast> =
         if (demo) Page(DemoData.podcasts, null) else api.categoryPodcasts(id, tab, key)
 
-    // ---------- 搜索 ----------
-
-    /**
-     * 搜索。type：ALL 综合（少量节目 + 单集，一页）/ PODCAST 节目 / EPISODE 单集（可翻页）。
-     * 2026-11 实测服务端排序和官方 App 一致，这里不再自己合并、重排。
-     */
+    /** type：ALL 综合（一页）/ PODCAST / EPISODE（可翻页）；服务端排序和官方一致（2026-11 实测），不自己重排 */
     suspend fun search(keyword: String, type: String = "ALL", key: JsonElement? = null): Pair<SearchResult, JsonElement?> {
         if (key == null && type == "ALL") local.recentSearches = (listOf(keyword) + local.recentSearches.filter { it != keyword })
         if (demo) {
@@ -338,12 +298,7 @@ class Repository(
     val recentSearches: List<String> get() = local.recentSearches
     fun clearRecentSearches() { local.recentSearches = emptyList() }
 
-    // ---------- 自动续播 ----------
-
-    /**
-     * 选下一集（规则见 [NextPicker]）。三类数据分别取，哪类失败就当没有；全失败（断网）返回 null，自动续播就停下。
-     * 都直接走接口、不用缓存：刚听完的进度可能还没上报完，靠 [exclude] 排除
-     */
+    /** 不走缓存：刚听完的进度可能还没上报完，靠 [exclude] 排除 */
     suspend fun pickNext(finished: Episode, exclude: Set<String>): NextPicker.Pick? {
         if (demo) return DemoData.allEpisodes().firstOrNull { it.eid != finished.eid && it.eid !in exclude }?.let { NextPicker.Pick(it, NextPicker.Reason.InProgress) }
         val sameShow = runCatching { neighborsInShow(finished) }.getOrDefault(emptyList())
@@ -362,7 +317,7 @@ class Repository(
         )
     }
 
-    /** 同一节目里刚听完那集和比它新的一集（最新在前，带进度）；最多翻 5 页找它 */
+    /** 返回比它新的一集和它自己（最新在前，带进度） */
     private suspend fun neighborsInShow(ep: Episode): List<Episode> {
         if (ep.pid.isEmpty()) return emptyList()
         var key: JsonElement? = null
@@ -381,8 +336,6 @@ class Repository(
 
     fun rejectAuto(eid: String) { local.autoRejected = local.autoRejected.filter { it != eid } + eid }
 
-    // ---------- 队列 ----------
-
     val queue: List<Episode> get() = local.queue
     fun enqueue(ep: Episode) { local.queue = local.queue.filter { it.eid != ep.eid } + ep }
     fun removeFromQueue(eid: String) { local.queue = local.queue.filter { it.eid != eid } }
@@ -398,7 +351,7 @@ class Repository(
 
     companion object {
         const val CACHE_MS = 5 * 60 * 1000L
-        /** 内存里最多留多少份列表：够来回切换几个分类、节目，又不会越积越多 */
+        /** 够来回切换几个分类、节目，又不会越积越多 */
         const val MAX_CACHED = 40
     }
 }

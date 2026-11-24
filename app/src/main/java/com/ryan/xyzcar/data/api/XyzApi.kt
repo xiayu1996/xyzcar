@@ -38,28 +38,18 @@ import java.util.concurrent.TimeUnit
 
 class ApiException(val status: Int, message: String) : IOException(message)
 
-/** 登录态失效且刷新失败：需要重新登录 */
 class AuthExpiredException : IOException("登录已过期，请重新登录")
 
-/**
- * 小宇宙接口客户端。接口定义参考 ultrazg/xyz（handlers 目录下的 Go 代码），
- * 所有接口调用集中在这个文件里，小宇宙改接口时只改这里。
- */
-/**
- * appVersion / appBuild 默认用 [APP_VERSION] / [APP_BUILD]；服务端会拒绝太旧的版本（「请升级到新版本后重试」），
- * 登录验证工具可以用环境变量临时覆盖，不用重新打包。
- */
+/** 接口参考 ultrazg/xyz。appVersion / appBuild 太旧会被服务端拒绝，登录验证工具可用环境变量临时覆盖 */
 class XyzApi(
     private val tokens: AuthTokens,
     private val appVersion: String = APP_VERSION,
     private val appBuild: String = APP_BUILD,
-    /** 单元测试里换成本地假服务器 */
     private val base: String = BASE,
     private val webBase: String = WEB_BASE,
-    /** 单调时钟（纳秒），测试里可以替换 */
     private val clock: () -> Long = System::nanoTime,
 ) {
-    /** 每个账号上次发起刷新的时间（单调时钟）；在 refreshLock 里读写 */
+    /** 只在 refreshLock 内读写 */
     private val lastRefreshAttempt = HashMap<String?, Long>()
 
 
@@ -68,13 +58,10 @@ class XyzApi(
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    /** 播放器用的 HTTP 客户端（读超时放宽） */
     val mediaHttp: OkHttpClient = http.newBuilder().readTimeout(30, TimeUnit.SECONDS).build()
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val refreshLock = Mutex()
-
-    // ---------- 公共请求 ----------
 
     private fun localTime(): String =
         OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
@@ -132,10 +119,10 @@ class XyzApi(
         return b.build()
     }
 
-    /** 切换账号：和刷新互斥，保证刷新拿到的新 token 写回发起刷新的那个账号 */
+    /** 切换账号与刷新互斥，保证新 token 写回发起刷新的那个账号 */
     suspend fun <T> withAuthLock(block: () -> T): T = refreshLock.withLock { block() }
 
-    /** 发请求；遇到 401 先刷新 token 再重试一次。中途切换了账号就放弃，不拿新账号去刷新或重试 */
+    /** 中途切换了账号就放弃，不拿新账号去刷新或重试 */
     private suspend fun exec(call: Call): JsonObject = withContext(Dispatchers.IO) {
         if (!tokens.isLoggedIn) throw AuthExpiredException()
         val account = tokens.accountId
@@ -166,14 +153,7 @@ class XyzApi(
         el as? JsonObject ?: JsonObject(mapOf("data" to el))
     }
 
-    // ---------- 登录 ----------
-
-    // ---------- 扫码登录 ----------
-    //
-    // 小宇宙统一登录页（accounts.xiaoyuzhoufm.com）的「扫码登录」：车机显示二维码，手机小宇宙 App 扫码确认。
-    // 2026-11 实测：短信验证码接口（App 的 /v1/auth/sendCode、网页的 /v1/auth/send-code）都要求阿里云人机验证参数
-    // captchaVerifyParam，只能在官方页面里由真人完成，所以不用短信登录。
-
+    // 只做扫码登录：2026-11 实测短信验证码接口都要求阿里云人机验证 captchaVerifyParam，只能在官方页面由真人完成
     data class LoginQr(val id: String, val url: String)
 
     enum class QrState { WAITING, SCANNED, CONFIRMED, EXPIRED }
@@ -187,13 +167,11 @@ class XyzApi(
             .post(body.toString().toByteArray().toRequestBody(JSON_TYPE))
             .build()
 
-    /** 接口报错时优先用服务端给的提示文案（toast） */
     private fun failure(resp: Response, text: String, what: String): ApiException {
         val toast = runCatching { json.parseToJsonElement(text).str("toast") }.getOrDefault("")
         return ApiException(resp.code, toast.ifEmpty { "$what（HTTP ${resp.code}）" })
     }
 
-    /** 申请一个登录二维码，二维码内容是 url，有效期几分钟 */
     suspend fun createLoginQr(): LoginQr = withContext(Dispatchers.IO) {
         http.newCall(webPost("/v1/auth/qrcode/create", buildJsonObject { put("clientId", WEB_CLIENT_ID) })).execute().use { resp ->
             val text = resp.body?.string().orEmpty()
@@ -203,15 +181,11 @@ class XyzApi(
         }
     }
 
-    /** 最近一次查询扫码状态的诊断信息（HTTP 状态码、服务端 code / 提示、带回了哪些头和 cookie 名）。不含 token 值 */
+    /** 扫码状态的诊断信息，只记头和 cookie 的名字，不含 token 值 */
     @Volatile var lastQrDiag: String = ""
         private set
 
-    /**
-     * 查一次扫码状态。官方网页把 CONFIRMED 和 USED 都当作登录成功，token 跟着这次响应回来
-     * （响应头 / 响应体 / Set-Cookie），所以两种状态都要取 token。
-     * 只有 401 + code 21（官方判定的过期）或 400「无效二维码」才算失效；其他错误抛出，由调用方重试。
-     */
+    /** 官方网页把 CONFIRMED 和 USED 都当登录成功，token 随这次响应返回；只有 401 + code 21 或 400「无效二维码」算失效 */
     suspend fun pollLoginQr(id: String): QrState = withContext(Dispatchers.IO) {
         http.newCall(webPost("/v1/auth/qrcode/login", buildJsonObject { put("id", id) })).execute().use { resp ->
             val text = resp.body?.string().orEmpty()
@@ -239,7 +213,7 @@ class XyzApi(
                 "CONFIRMED", "USED" -> {
                     val (access, refresh) = tokensFrom(resp, o)
                     if (access.isNotEmpty() && refresh.isNotEmpty()) {
-                        // 登录页已经取消、回到了原账号：不覆盖原账号
+                        // 登录页已取消、回到了原账号：不覆盖它
                         if (tokens.saveLogin(access, refresh)) QrState.CONFIRMED else QrState.EXPIRED
                     } else if (tokens.isLoggedIn) {
                         QrState.CONFIRMED
@@ -252,7 +226,6 @@ class XyzApi(
         }
     }
 
-    /** token 依次从响应头、响应体、Set-Cookie 里找 */
     private fun tokensFrom(resp: Response, o: JsonObject?): Pair<String, String> {
         val cookies = resp.headers("Set-Cookie").associate { c ->
             val kv = c.substringBefore(';'); kv.substringBefore('=').trim() to kv.substringAfter('=', "").trim()
@@ -262,18 +235,12 @@ class XyzApi(
         return find("x-jike-access-token") to find("x-jike-refresh-token")
     }
 
-    /** 刷新 token。多个请求同时 401 时只刷新一次 */
     /**
-     * 刷新 token。频率控制：
-     * - 只在服务端对请求返回 401（access token 真过期）时才刷新，不定时刷新、不提前刷新。官方网页端也是这样做的。
-     *   正常使用时大约每 20–30 分钟一次（access token 实测有效期 ≥ 21 分钟），App 不用时一次都不刷新。
-     * - 多个请求同时 401 只刷新一次（锁 + 检查 token 是否已被别人换掉）。
-     * - 同一账号两次刷新请求至少间隔 [MIN_REFRESH_INTERVAL_MS]（多账号各自计时）：刷新后紧接着又 401（例如某个接口本身就不认这个 token），
-     *   或服务端 5xx / 断网时，不会每个请求都去刷新。用单调时钟，车机改时间不影响。
+     * 只在 401 时刷新，不定时、不提前。同一账号两次刷新至少隔 [MIN_REFRESH_INTERVAL_MS]，
+     * 免得接口本身不认 token 或 5xx / 断网时每个请求都去刷新；用单调时钟，不受车机改时间影响
      */
     suspend fun refreshToken(staleAccess: String?) = refreshLock.withLock {
         if (tokens.accessToken != staleAccess && tokens.accessToken != null) return@withLock // 别人已经刷新过
-        // 间隔按账号分别计算：刚刷新过 A，切到 B 不用等
         val account = tokens.accountId
         val last = lastRefreshAttempt[account] ?: 0L
         if (last != 0L && clock() - last < MIN_REFRESH_INTERVAL_MS * 1_000_000) {
@@ -282,8 +249,7 @@ class XyzApi(
         lastRefreshAttempt[account] = clock()
         withContext(Dispatchers.IO) {
             val refresh = tokens.refreshToken ?: throw AuthExpiredException()
-            // 2026-11 实测：扫码登录拿到的 token 走 App 接口刷新即可，每次刷新会同时换新 refresh token（滑动续期）。
-            // 只有服务端明确 401 才算登录过期；5xx、网络错误都是暂时的，保留登录态
+            // 2026-11 实测每次刷新都会换新 refresh token；只有 401 算登录过期，5xx 和网络错误保留登录态
             val req = Request.Builder().url("$base/app_auth_tokens.refresh")
                 .iosHeaders(abtest = null, withTime = false)
                 .header("x-jike-refresh-token", refresh)
@@ -301,9 +267,7 @@ class XyzApi(
         }
     }
 
-    // ---------- 订阅 ----------
-
-    /** 订阅列表。sortBy=latestEpisodePubDate：按最新单集时间倒序（2026-11 实测可用，和官方「我的订阅」默认排序一致） */
+    /** sortBy=latestEpisodePubDate 按最新单集倒序（2026-11 实测可用，与官方默认排序一致） */
     suspend fun subscriptions(loadMoreKey: JsonElement? = null, sortBy: String = "latestEpisodePubDate"): Page<Podcast> {
         val body = buildJsonObject {
             put("limit", "20"); put("sortOrder", "desc"); put("sortBy", sortBy)
@@ -332,8 +296,6 @@ class XyzApi(
         return (r["data"] as? JsonObject)?.let { parsePodcast(it) }
     }
 
-    // ---------- 节目与单集 ----------
-
     suspend fun podcast(pid: String): Podcast =
         parsePodcast(exec(Call("GET", "/v1/podcast/get?pid=$pid")).obj("data") ?: throw ApiException(0, "节目不存在"))
 
@@ -348,8 +310,6 @@ class XyzApi(
 
     suspend fun episode(eid: String): Episode =
         parseEpisode(exec(Call("GET", "/v1/episode/get?eid=$eid")).obj("data") ?: throw ApiException(0, "单集不存在"))
-
-    // ---------- 播放进度 ----------
 
     /** eid → 已播放秒数 */
     suspend fun progress(eids: List<String>): Map<String, Int> {
@@ -377,21 +337,15 @@ class XyzApi(
         exec(Call("POST", "/v1/playback-progress/update", body))
     }
 
-    // ---------- 订阅更新（官方「订阅 → 更新」） ----------
-
-    /** 订阅节目的新单集，按发布时间倒序；单集带 isPlayed / isFinished。loadMoreKey 是 {pubDate, id} */
+    /** 官方「订阅 → 更新」：订阅节目的新单集，按发布时间倒序 */
     suspend fun inbox(loadMoreKey: JsonElement? = null): Page<Episode> {
         val body = buildJsonObject { put("limit", "20"); if (loadMoreKey != null && loadMoreKey !is JsonNull) put("loadMoreKey", loadMoreKey) }
         val r = exec(Call("POST", "/v1/inbox/list", body))
         return Page(r.arr("data").mapObj { parseListEpisode(it) }, r["loadMoreKey"].nonNull())
     }
 
-    // ---------- 账号 ----------
-
-    /** 当前账号的昵称和头像。返回里还有手机号等字段，这里只取需要的三项 */
+    /** 返回里还有手机号等字段，只取 uid、昵称和头像 */
     suspend fun profile(): User = XyzParser.parseUser(exec(Call("GET", "/v1/profile/get")).obj("data"))
-
-    // ---------- 收听历史 ----------
 
     suspend fun history(loadMoreKey: JsonElement? = null): Page<Episode> {
         val body = buildJsonObject { if (loadMoreKey != null && loadMoreKey !is JsonNull) put("loadMoreKey", loadMoreKey) }
@@ -399,9 +353,6 @@ class XyzApi(
         return Page(r.arr("data").mapObj { it.obj("episode")?.let { e -> parseListEpisode(e) } }.filterNotNull(), r["loadMoreKey"].nonNull())
     }
 
-    // ---------- 发现 ----------
-
-    /** 发现页一屏：返回区块和下一段的 token */
     suspend fun discovery(loadMoreKey: String? = null): Pair<List<DiscoverySection>, String?> {
         val body = buildJsonObject { put("returnAll", "false"); if (loadMoreKey != null) put("loadMoreKey", loadMoreKey) }
         val r = exec(Call("POST", "/v1/discovery-feed/list", body))
@@ -409,14 +360,13 @@ class XyzApi(
         return sections to (r["loadMoreKey"] as? JsonPrimitive)?.content?.takeIf { it.isNotEmpty() && it != "null" }
     }
 
-    /** 诊断用：只描述发现页返回的结构（类型、字段名），不含内容 */
+    /** 诊断用：只输出结构，不含内容 */
     suspend fun discoveryShape(loadMoreKey: String? = null): String = shapeOf(exec(Call("POST", "/v1/discovery-feed/list",
         buildJsonObject { put("returnAll", "false"); if (loadMoreKey != null) put("loadMoreKey", loadMoreKey) })))
 
-    /** 诊断用（只给登录验证工具的 probe 步骤用）：发任意只读请求，返回原始 JSON */
+    /** 只给登录验证工具的 probe 步骤用，只发只读请求 */
     suspend fun rawForProbe(method: String, path: String, body: JsonObject?): JsonObject = exec(Call(method, path, body))
 
-    /** 诊断用：新节目广场的返回结构 */
     suspend fun newEpisodesSquareShape(): String =
         shapeOf(exec(Call("POST", "/v1/pilot-discovery/list", abtest = "{}", acceptLanguage = "zh-Hant-CN;q=1.0, zh-Hans-HK;q=0.9")))
 
@@ -465,19 +415,13 @@ class XyzApi(
 
     suspend fun categories(): List<Category> = XyzParser.parseCategories(exec(Call("POST", "/v1/category/list-all", abtest = null)))
 
-    /**
-     * 分类下的推荐单集（官方「推荐」页按分类切换的卡片）。tab：RECOMMEND 为你推荐 / HOT 近期热门 / ALL 全部。
-     * 2026-11 实测每个 item 是 {podcast, episode}，一次 10 条，没有 loadMoreKey。
-     */
+    /** tab：RECOMMEND 为你推荐 / HOT 近期热门 / ALL 全部；2026-11 实测一次 10 条，没有 loadMoreKey */
     suspend fun categoryEpisodes(categoryId: String, tab: String = "RECOMMEND"): List<Episode> {
         val body = buildJsonObject { put("categoryId", categoryId); put("tab", tab); put("omitSubscribed", false) }
         return XyzParser.parseCategoryEpisodes(exec(Call("POST", "/v1/category/podcast/list-by-tab", body, abtest = null)))
     }
 
-    /**
-     * 单集文字稿：先取带签名的下载地址（有效期很短，不缓存），再从 CDN 下载。
-     * CDN 只认小宇宙 App 的 User-Agent（普通 UA 返回 403），所以只带 UA，不带账号 token 和设备号。没有文字稿返回空列表
-     */
+    /** 签名地址有效期很短，不缓存；CDN 只认小宇宙 App 的 UA（否则 403），只带 UA，不带 token 和设备号 */
     suspend fun transcript(eid: String, mediaId: String): List<TranscriptLine> {
         val body = buildJsonObject { put("eid", eid); put("mediaId", mediaId) }
         val url = exec(Call("POST", "/v1/episode-transcript/get", body)).obj("data").str("transcriptUrl")
@@ -490,7 +434,7 @@ class XyzApi(
         }
     }
 
-    /** 「为你推荐」换一批：每次返回 3 集新的推荐（只在用户点「换一批」时调用） */
+    /** 每次返回 3 集，只在用户点「换一批」时调用 */
     suspend fun refreshRecommend(): List<Episode> {
         val r = exec(Call("POST", "/v1/discovery-collection/refresh-episode-recommend"))
         return when (val d = r["data"]) {
@@ -513,8 +457,6 @@ class XyzApi(
         return Page(r.arr("data").mapObj { it.obj("podcast")?.let { p -> parsePodcast(p) } }.filterNotNull(), r["loadMoreKey"].nonNull())
     }
 
-    // ---------- 搜索 ----------
-
     suspend fun search(keyword: String, type: String = "ALL", loadMoreKey: JsonElement? = null): Pair<SearchResult, JsonElement?> {
         val body = buildJsonObject {
             put("limit", "20"); put("sourcePageName", "4"); put("currentPageName", "4")
@@ -535,12 +477,12 @@ class XyzApi(
     companion object {
         const val BASE = "https://api.xiaoyuzhoufm.com"
         const val WEB_BASE = "https://web-api.xiaoyuzhoufm.com"
-        /** 两次刷新请求之间至少隔 60 秒（不管上次成功还是失败），防止异常情况下高频刷新 */
+        /** 不论上次刷新成败都要隔满，防止异常时高频刷新 */
         const val MIN_REFRESH_INTERVAL_MS = 60_000L
-        /** 统一登录页用的应用标识（取自 accounts.xiaoyuzhoufm.com 前端代码） */
+        /** 取自 accounts.xiaoyuzhoufm.com 前端代码 */
         const val WEB_APP_ID = "v6worU4NnWyL"
         const val WEB_CLIENT_ID = "xyz-web"
-        /** 伪装的 iOS 版本：取自 2026-08 仍在维护的开源客户端里的真实版本 / 构建号组合 */
+        /** 伪装 iOS 客户端：取自 2026-08 仍在维护的开源客户端的真实版本 / 构建号组合 */
         const val APP_VERSION = "2.98.0"
         const val APP_BUILD = "2908"
         const val OS_VERSION = "26.2.1"
@@ -549,12 +491,10 @@ class XyzApi(
     }
 }
 
-/** 返回结构解析：纯函数，方便单元测试 */
 object XyzParser {
     /**
-     * 发现页。2026-11 实测返回的 data 是一组卡片：
-     * DISCOVERY_HEADER（顶部入口，跳过）、DISCOVERY_EPISODE_RECOMMEND（data 是单个模块对象：title + target[].episode）、
-     * EDITOR_PICK（data.picks[].episode）、第二页的 TOP_LIST（data[] 每个榜单 items[].item）和 CATEGORY_ENTRANCE（跳过）；旧版的 DISCOVERY_COLLECTION（data 是模块数组）、NEW_POWER 也兼容。
+     * 2026-11 实测 data 是一组卡片：DISCOVERY_EPISODE_RECOMMEND（data 是单个模块）、EDITOR_PICK、第二页的 TOP_LIST；
+     * 旧版的 DISCOVERY_COLLECTION（data 是模块数组）、NEW_POWER 也兼容
      */
     fun parseDiscovery(r: JsonObject): List<DiscoverySection> {
         val sections = mutableListOf<DiscoverySection>()
@@ -562,7 +502,7 @@ object XyzParser {
             val o = item as? JsonObject ?: return@forEach
             val data = o["data"]
             when (o.str("type")) {
-                "DISCOVERY_HEADER", "CATEGORY_ENTRANCE" -> {} // 顶部入口、分类入口：App 里有单独的分类页
+                "DISCOVERY_HEADER", "CATEGORY_ENTRANCE" -> {} // App 里有单独的分类页
                 "TOP_LIST" -> (data as? JsonArray)?.forEach { t ->
                     val tl = t as? JsonObject ?: return@forEach
                     val eps = tl.arr("items").mapObj { it.obj("item")?.let(::parseListEpisode) }.filterNotNull()
@@ -576,7 +516,6 @@ object XyzParser {
                     val eps = o.obj("data").arr("picks").mapObj { it.obj("episode")?.let(::parseListEpisode) }.filterNotNull()
                     if (eps.isNotEmpty()) sections += DiscoverySection("编辑精选", episodes = eps)
                 }
-                // 其他类型：data 是模块数组或单个模块对象，尽量识别，识别不了就跳过
                 else -> when (data) {
                     is JsonArray -> data.forEach { m -> (m as? JsonObject)?.let { parseModule(it) }?.let(sections::add) }
                     is JsonObject -> parseModule(data)?.let(sections::add)
@@ -596,7 +535,6 @@ object XyzParser {
         return DiscoverySection(title, podcasts = pods, episodes = eps)
     }
 
-    /** 搜索结果：data 里混着 HEADER / PODCAST / EPISODE；highlightWord.words 是要高亮的词 */
     fun parseSearch(r: JsonObject): SearchResult {
         val pods = mutableListOf<Podcast>()
         val eps = mutableListOf<Episode>()
@@ -617,7 +555,6 @@ object XyzParser {
             Category(c.str("id"), c.str("name"), icon.str("smallPicUrl").ifEmpty { icon.str("picUrl") })
         }.filter { it.id.isNotEmpty() && it.name.isNotEmpty() }
 
-    /** 分类推荐：每项 {podcast, episode}；单集里没有节目信息时用外层 podcast 补齐 */
     fun parseCategoryEpisodes(r: JsonObject): List<Episode> =
         r.arr("data").mapObj { item ->
             val e = item.obj("episode") ?: return@mapObj null
@@ -632,10 +569,7 @@ object XyzParser {
             )
         }.filter { it.eid.isNotEmpty() }
 
-    /**
-     * 文字稿（2026-11 实测）：JSON 数组，每项 {text, startMs}，CDN 返回的是 gzip 压缩过的字节。
-     * 也兼容外面再包一层对象的写法；空句子跳过，按时间排序
-     */
+    /** 2026-11 实测是 JSON 数组 [{text, startMs}]；也兼容外面再包一层对象 */
     fun parseTranscript(text: String): List<TranscriptLine> {
         val root = runCatching { Json.parseToJsonElement(text) }.getOrNull() ?: return emptyList()
         val arr = root as? JsonArray ?: (root as? JsonObject)?.values?.firstOrNull { it is JsonArray } as? JsonArray ?: return emptyList()
@@ -646,7 +580,7 @@ object XyzParser {
         }.sortedBy { it.startMs }
     }
 
-    /** gzip 魔数 1f 8b 开头就解压，否则原样返回（服务端带不带 Content-Encoding 都能处理） */
+    /** 文字稿 CDN 返回 gzip 字节但不一定带 Content-Encoding，按魔数判断 */
     fun gunzipIfNeeded(b: ByteArray): ByteArray =
         if (b.size > 2 && b[0] == 0x1f.toByte() && b[1] == 0x8b.toByte()) java.util.zip.GZIPInputStream(b.inputStream()).use { it.readBytes() } else b
 
@@ -678,7 +612,6 @@ object XyzParser {
         return ThemeColor(c.str("original"), c.str("light"), c.str("dark")).takeIf { it.original.isNotEmpty() }
     }
 
-    /** 列表里的单集：不带 shownotes，简介截短（见 [com.ryan.xyzcar.data.lite]） */
     fun parseListEpisode(o: JsonObject): Episode = parseEpisode(o).lite()
 
     fun parseEpisode(o: JsonObject): Episode {
@@ -707,8 +640,6 @@ object XyzParser {
     }
 
 }
-
-// ---------- JSON 小工具：字段缺失时返回空值，不抛异常 ----------
 
 internal fun JsonElement?.obj(key: String): JsonObject? = (this as? JsonObject)?.get(key) as? JsonObject
 internal fun JsonElement?.arr(key: String): JsonArray = ((this as? JsonObject)?.get(key) as? JsonArray) ?: JsonArray(emptyList())

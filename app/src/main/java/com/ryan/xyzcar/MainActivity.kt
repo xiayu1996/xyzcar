@@ -20,11 +20,11 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         if (vm.loggedIn) vm.player.onForeground()
-        // 车机上进程常常几天不退出：每次回到前台都静默检查一次（成功后 24 小时内、失败后 1 小时内不重复查）
+        // 车机进程常几天不退出，所以每次回前台都查（成功后 24 小时、失败后 1 小时内不重复）
         if (vm.loggedIn) vm.checkUpdate(silent = true)
     }
 
-    /** Firebase Test Lab 设备上这个系统设置为 "true"：自动进演示模式，避免 Robo 往登录框乱填号码发短信 */
+    /** Test Lab 设备上为 "true"：进演示模式，避免 Robo 往登录框乱填号码发短信 */
     private fun inTestLab(): Boolean =
         runCatching { android.provider.Settings.System.getString(contentResolver, "firebase.test.lab") == "true" }.getOrDefault(false)
 
@@ -58,7 +58,6 @@ class MainActivity : ComponentActivity() {
                     color = androidx.compose.material3.MaterialTheme.colorScheme.background,
                     contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
                 ) {
-                    // 登录页 ↔ 主界面（含切换 / 添加账号）淡入淡出
                     androidx.compose.animation.Crossfade(vm.loggedIn, animationSpec = androidx.compose.animation.core.tween(300), label = "auth") { inApp ->
                         if (inApp) MainLayout(vm) else LoginScreen(vm)
                     }

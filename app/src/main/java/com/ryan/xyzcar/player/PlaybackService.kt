@@ -32,12 +32,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
-/**
- * 播放服务：Media3 ExoPlayer + MediaSession。
- * - 方向盘「上一曲 / 下一曲」= 后退 15 秒 / 前进 30 秒（CarPlayer 改写）
- * - 播放中每 30 秒上报一次进度；暂停、结束时立即上报
- * - 单集结束后自动播放队列里的下一集
- */
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
 
@@ -56,7 +50,7 @@ class PlaybackService : MediaSessionService() {
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
-                    // MUSIC：导航播报时自动降低音量（SPEECH 会直接暂停）
+                    // MUSIC：导航播报时降低音量；SPEECH 会直接暂停
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .build(),
                 /* handleAudioFocus = */ true,
@@ -94,7 +88,7 @@ class PlaybackService : MediaSessionService() {
         current = this
     }
 
-    /** 切换账号前：在旧账号名下保存续播点、上报进度（最多等 5 秒，失败留在旧账号的待补发里），然后停播清空 */
+    /** 先在旧账号名下存续播点；上报最多等 5 秒，失败留在旧账号的待补发里 */
     suspend fun detachAccount() {
         val app = App.instance
         val ep = currentEpisode()
@@ -107,7 +101,6 @@ class PlaybackService : MediaSessionService() {
         if (ep != null && pos > 0) kotlinx.coroutines.withTimeoutOrNull(5_000) { runCatching { app.repo.reportProgress(ep, (pos / 1000).toInt(), account) } }
     }
 
-    /** 切换账号后：载入新账号上次播放的单集（不自动播放） */
     fun attachAccount() {
         App.instance.local.lastPlayed?.let { last ->
             exo.setMediaItem(buildMediaItem(last.episode), last.positionMs)
@@ -138,7 +131,7 @@ class PlaybackService : MediaSessionService() {
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             tickJob?.cancel()
-            // 「换一集」的 10 秒从真正出声开始算，弱网缓冲不占用
+            // 换一集的 10 秒从真正出声算起，弱网缓冲不占用
             AutoNext.started.value?.let { s ->
                 if (isPlaying && !s.begun && currentEpisode()?.eid == s.eid) {
                     AutoNext.started.value = s.copy(atElapsed = android.os.SystemClock.elapsedRealtime(), begun = true)
@@ -159,11 +152,10 @@ class PlaybackService : MediaSessionService() {
         override fun onPlaybackStateChanged(state: Int) {
             if (state == Player.STATE_ENDED) {
                 val ep = currentEpisode() ?: return
-                // 听完：进度上报为总时长
                 val dur = (exo.duration.takeIf { it > 0 } ?: (ep.durationSec * 1000L)) / 1000
                 val account = App.instance.tokens.activeId
                 scope.launch { runCatching { App.instance.repo.reportProgress(ep, dur.toInt(), account) } }
-                // 只有一直在播放时才接着播：重新打开应用时恢复到「已播完」位置也会触发 ENDED，不能因此自己出声
+                // 恢复到「已播完」位置也会触发 ENDED：只有一直在播时才接着播，避免自己出声
                 if (!exo.playWhenReady) return
                 if (App.instance.local.queue.isNotEmpty()) playNextInQueue() else continueAfter(ep)
             }
@@ -193,12 +185,10 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    // ---------- 自动续播 ----------
-
     private var planJob: Job? = null
     private var plannedFor: String? = null
 
-    /** 播放中每秒调用：剩 90 秒时提前选好下一集，提示条和播完都用它 */
+    /** 播放中每秒调用 */
     private fun maybePlan(ep: Episode) {
         val app = App.instance
         val dur = exo.duration.takeIf { it > 0 } ?: return
@@ -215,7 +205,6 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    /** 单集播完、播放列表是空的：按计划（或现选）接着播；用户点过「不要自动播」、关了开关、选不出来（含断网）就停 */
     private fun continueAfter(ep: Episode) {
         val app = App.instance
         val cancelled = AutoNext.cancelledAfter.value == ep.eid
@@ -229,7 +218,7 @@ class PlaybackService : MediaSessionService() {
             val pick = plan?.let { com.ryan.xyzcar.data.NextPicker.Pick(it.next, it.reason) }
                 ?: kotlinx.coroutines.withTimeoutOrNull(10_000) { runCatching { app.repo.pickNext(ep, emptySet()) }.getOrNull() }
                 ?: return@launch
-            // 期间切了账号、用户自己点了别的、暂停了或定时关闭到点了，都不接着播
+            // 期间切了账号、点了别的、暂停或定时关闭到点，都不接着播
             if (app.tokens.activeId != account || exo.playbackState != Player.STATE_ENDED || !exo.playWhenReady) return@launch
             playAuto(pick, setOf(ep.eid), ep)
         }
@@ -248,10 +237,7 @@ class PlaybackService : MediaSessionService() {
         com.ryan.xyzcar.data.DebugLog.kv("player", "auto_next", "reason" to pick.reason.name)
     }
 
-    /**
-     * 刚自动接上的单集开头 10 秒内「换一集」：记下这集不想听，换下一个候选。
-     * 不在这个时间窗里返回 false（方向盘「下一曲」照常前进 30 秒）
-     */
+    /** 不在换一集时间窗内返回 false，方向盘「下一曲」照常前进 30 秒 */
     fun swapAuto(): Boolean {
         val s = AutoNext.started.value ?: return false
         val cur = currentEpisode() ?: return false
@@ -272,7 +258,6 @@ class PlaybackService : MediaSessionService() {
 
     private fun currentEpisode(): Episode? = exo.currentMediaItem?.let { episodeOf(it) }
 
-    /** 本地每 5 秒保存一次续播点；服务端每 30 秒最多上报一次 */
     private fun saveAndReport(force: Boolean) {
         if (!::exo.isInitialized) return
         val ep = currentEpisode() ?: return
@@ -320,7 +305,7 @@ class PlaybackService : MediaSessionService() {
         ): ListenableFuture<MutableList<MediaItem>> =
             Futures.immediateFuture(mediaItems.map { item -> episodeOf(item)?.let { buildMediaItem(it) } ?: item }.toMutableList())
 
-        // 系统「继续播放」（例如车机开机后点媒体卡片）
+        // 系统「继续播放」，如车机开机后点媒体卡片
         override fun onPlaybackResumption(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -335,7 +320,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
-        /** 同进程里正在运行的播放服务（切换账号时直接调用，保证先存旧账号再切） */
+        /** 切换账号时直接调用，保证先存旧账号再切 */
         @Volatile var current: PlaybackService? = null
             private set
         const val SEEK_BACK_MS = 15_000L
@@ -386,7 +371,6 @@ class CarPlayer(player: Player, private val swapAuto: () -> Boolean = { false })
 
     override fun isCommandAvailable(command: Int): Boolean = availableCommands.contains(command)
 
-    // 自动接上的单集开头 10 秒内，「下一曲」= 换一集
     override fun seekToNext() { if (!swapAuto()) seekForward() }
     override fun seekToNextMediaItem() { if (!swapAuto()) seekForward() }
     override fun seekToPrevious() = seekBack()

@@ -86,10 +86,10 @@ import com.ryan.xyzcar.ui.theme.Xyz
 import com.ryan.xyzcar.ui.theme.tintOf
 import kotlinx.coroutines.launch
 
-/** 「综合」不是接口里的分类，用发现页的「为你推荐」 */
+/** 「综合」不是接口分类，用发现页的「为你推荐」 */
 private val ALL = Category("__all", "综合")
 
-/** 分类下的两个子列表（2026-11 实测接口的 tab） */
+/** 2026-11 实测接口的两个子 tab */
 private val SUB_TABS = listOf("RECOMMEND" to "为你推荐", "HOT" to "近期热门")
 
 private class RecommendState {
@@ -99,10 +99,6 @@ private class RecommendState {
     var refreshing by mutableStateOf(false)
 }
 
-/**
- * 推荐页（官方「推荐」）：顶部分类胶囊 + 「全部分类」面板，下面是按节目封面取色的单集卡片。
- * 切分类时卡片区淡入 + 轻微上移，面板展开 / 收起有高度动画。
- */
 @Composable
 fun RecommendScreen(vm: AppViewModel) {
     val cats = vm.loadHolder("tab:Recommend:cats") { _ -> vm.repo.categories() }
@@ -158,7 +154,6 @@ fun RecommendScreen(vm: AppViewModel) {
     }
 }
 
-/** 分类胶囊：图标（接口给的分类图）+ 名称；选中时青色粗描边 + 浅青底 */
 @Composable
 internal fun CategoryChip(c: Category, selected: Boolean, onClick: () -> Unit) {
     val x = Xyz
@@ -190,7 +185,6 @@ private fun CategoryIcon(c: Category, size: androidx.compose.ui.unit.Dp) {
     }
 }
 
-/** 全部分类面板：网格排开，选中项略微倾斜（官方样式），点了选中并收起 */
 @Composable
 internal fun CategoryPanel(all: List<Category>, selected: Category, onPick: (Category) -> Unit) {
     val x = Xyz
@@ -225,7 +219,6 @@ internal fun CategoryPanel(all: List<Category>, selected: Category, onPick: (Cat
     }
 }
 
-/** 综合：为你推荐 + 点「换一批」追加的推荐 */
 @Composable
 private fun AllBody(vm: AppViewModel, st: RecommendState) {
     val h = vm.loadHolder("tab:Recommend:all") { force -> vm.repo.recommend(force) }
@@ -255,7 +248,6 @@ private fun CategoryBody(vm: AppViewModel, st: RecommendState, id: String, sub: 
     })
 }
 
-/** 卡片网格；header 在最上面整行，footer 在最下面整行 */
 @Composable
 private fun CardsBody(
     vm: AppViewModel,
@@ -288,9 +280,6 @@ private fun CardsBody(
     } }
 }
 
-/**
- * 推荐卡片：节目色浅底，左上标题（粗体两行）+ 简介，右侧封面，底部一栏带时长的播放胶囊（靠左）/ 节目名 / 收听数。
- */
 @Composable
 internal fun RecommendCard(ep: Episode, playing: Boolean, onOpen: () -> Unit, onPlay: () -> Unit, modifier: Modifier = Modifier) {
     val x = Xyz

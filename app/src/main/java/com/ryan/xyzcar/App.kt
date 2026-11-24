@@ -44,14 +44,13 @@ class App : Application(), ImageLoaderFactory {
         DebugLog.init(this)
         CrashLog.install(this)
         watchNetwork()
-        // 车机快照和实验开关：后台线程，失败只写日志
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching { CarLab.onAppStart(this@App, local, BuildConfigInfo.VERSION) }
                 .onFailure { DebugLog.kv("start", "snapshot_error", "error" to "${it.javaClass.simpleName}:${it.message.orEmpty()}") }
         }
     }
 
-    /** 封面图片：内存缓存占应用可用内存的 15%（Coil 默认 20%），磁盘缓存 64 MB；新图淡入，不硬切 */
+    /** 内存缓存 15%，比 Coil 默认的 20% 小 */
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.15).build() }
         .diskCache { DiskCache.Builder().directory(cacheDir.resolve("covers")).maxSizeBytes(64L * 1024 * 1024).build() }
@@ -59,7 +58,7 @@ class App : Application(), ImageLoaderFactory {
         .respectCacheHeaders(false)
         .build()
 
-    /** 界面看不见了（车机上多半是在后台播放）：放掉图片和列表的内存缓存，回来时从磁盘缓存重新解码 */
+    /** 车机上界面隐藏多半是在后台播放，放掉内存缓存，回来从磁盘缓存重新解码 */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (level >= TRIM_MEMORY_UI_HIDDEN) {
@@ -68,7 +67,6 @@ class App : Application(), ImageLoaderFactory {
         }
     }
 
-    /** 网络恢复时补发之前上报失败的进度（F6） */
     private fun watchNetwork() {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

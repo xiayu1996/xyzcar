@@ -19,7 +19,6 @@ import org.junit.Assert.fail
 import org.junit.Test
 import java.io.IOException
 
-/** 多账号：旧版迁移、添加账号不碰当前账号、同一个人合并、过期只影响一个账号、切换和刷新互斥 */
 class AccountStoreTest {
     private class MemKv(init: Map<String, String> = emptyMap()) : KeyValue {
         val map = HashMap(init)
@@ -53,7 +52,7 @@ class AccountStoreTest {
         s.setProfile(AccountStore.MAIN, User("u1", "一号"))
         s.activate(null) // 添加账号：暂时离开当前账号
         assertFalse(s.isLoggedIn)
-        s.save("A2", "R2") // 扫码登录写进新槽位
+        s.save("A2", "R2")
         val second = s.activeId!!
         assertTrue(second != AccountStore.MAIN)
         s.setProfile(second, User("u2", "二号"))
@@ -64,7 +63,6 @@ class AccountStoreTest {
         assertEquals("R1", s.refreshToken)
     }
 
-    /** 取消添加账号、回到原账号后，晚到的扫码结果不能覆盖原账号 */
     @Test fun lateQrLoginDoesNotOverwriteActiveAccount() {
         val s = AccountStore(MemKv(mapOf("access" to "A1", "refresh" to "R1")))
         assertFalse(s.saveLogin("X", "Y"))
@@ -100,7 +98,6 @@ class AccountStoreTest {
         assertEquals(listOf(AccountStore.MAIN), s.ids)
     }
 
-    /** 刷新间隔按账号计时：刚刷新过 A，切到 B 马上能刷新 */
     @Test fun refreshIntervalIsPerAccount() = runBlocking {
         val server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
@@ -132,7 +129,7 @@ class AccountStoreTest {
         }
     }
 
-    /** 刷新进行中切换账号：新 token 写回发起刷新的账号，另一个账号不受影响；原请求放弃，不拿新账号重试 */
+    /** 原请求放弃，不拿新账号重试 */
     @Test fun switchDuringRefreshKeepsTokensWithTheirAccount() = runBlocking {
         val server = MockWebServer()
         server.dispatcher = object : Dispatcher() {

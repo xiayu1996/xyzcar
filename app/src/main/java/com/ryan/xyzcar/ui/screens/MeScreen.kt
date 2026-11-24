@@ -102,10 +102,6 @@ const val REPO_URL = "https://github.com/xiayu1996/xyzcar"
 const val LICENSE_NAME = "PolyForm 非商用 1.0.0"
 const val DISCLAIMER = "非官方第三方客户端，仅供个人学习交流，与小宇宙官方无关，禁止商业用途。节目内容版权归原作者及平台所有。"
 
-/**
- * 我的（官方「个人」）：左栏昵称 + 头像、收听历史 / 播放列表 / 车机信息 / 退出登录、关于；
- * 右栏外观（浅色 / 深色 / 跟随系统）和显示大小。窄屏时上下排列。
- */
 @Composable
 fun MeScreen(vm: AppViewModel) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -172,7 +168,6 @@ private fun AccountColumn(vm: AppViewModel) {
     Text(DISCLAIMER, style = MaterialTheme.typography.bodySmall, color = x.sub, modifier = Modifier.padding(top = 12.dp, bottom = 24.dp))
 }
 
-/** 其他已登录的账号（点一下切换）和「添加账号」；列表增减带展开动画 */
 @Composable
 private fun AccountSwitcher(vm: AppViewModel) {
     val x = Xyz
@@ -200,10 +195,7 @@ private fun AccountSwitcher(vm: AppViewModel) {
     MenuRow(Icons.Filled.PersonAdd, "添加账号", "扫码登录另一个小宇宙账号") { vm.addAccount() }
 }
 
-/**
- * 检查更新 → 下载（带进度）→ 安装。比亚迪车机不给第三方应用安装权限（设置里也没有开关），
- * 这时安装包另存到「下载/xyzcar/」和 U 盘，点击打开车机的文件管理去装。
- */
+/** 比亚迪车机不给第三方应用安装权限：安装包另存到「下载/xyzcar/」和 U 盘，用文件管理安装 */
 @Composable
 private fun UpdateRow(vm: AppViewModel) {
     val x = Xyz
@@ -332,7 +324,6 @@ private fun SettingsColumn(vm: AppViewModel) {
     Spacer(Modifier.height(24.dp))
 }
 
-/** 播放：自动续播开关；「订阅新更新」只在自动续播打开时出现 */
 @Composable
 private fun PlaybackSettings(vm: AppViewModel) {
     val x = Xyz
@@ -349,7 +340,6 @@ private fun PlaybackSettings(vm: AppViewModel) {
     }
 }
 
-/** 外观预览卡：迷你界面示意 + 单选圈；「跟随系统」左浅右深 */
 @Composable
 internal fun ThemeCard(mode: ThemeMode, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val x = Xyz
@@ -386,7 +376,6 @@ internal fun ThemeCard(mode: ThemeMode, selected: Boolean, modifier: Modifier, o
     }
 }
 
-/** 预览卡里的迷你界面：标题条 + 两行列表 */
 @Composable
 private fun Preview(c: XyzColors, modifier: Modifier) {
     Column(modifier.fillMaxHeight().background(c.bg).border(1.dp, c.line).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -403,9 +392,6 @@ private fun Preview(c: XyzColors, modifier: Modifier) {
     }
 }
 
-/**
- * 刻度滑杆（iOS 风格）：5 个刻度，点刻度或拖动都会吸附到最近一档，滑块位置弹簧动画。
- */
 @Composable
 internal fun TickSlider(value: Int, labels: List<String>, onChange: (Int) -> Unit) {
     val x = Xyz
@@ -457,17 +443,13 @@ internal fun TickSlider(value: Int, labels: List<String>, onChange: (Int) -> Uni
     }
 }
 
-// ---------------- 车机信息（诊断） ----------------
-
 private tailrec fun android.content.Context.activity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.activity()
     else -> null
 }
 
-/**
- * 车机信息：导出按钮 + 几行摘要。原始数据（小迪设置表、分屏接口、应用对照、系统属性、事件日志）只进导出的报告，屏幕上不列。
- */
+/** 原始数据只进导出的报告，屏幕上不列 */
 @Composable
 fun DiagnosticsScreen(onBack: (() -> Unit)?) {
     val x = Xyz

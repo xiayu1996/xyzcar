@@ -6,7 +6,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** 崩溃日志写到 app 私有目录 files/crash/，可以用 adb 导出 */
 object CrashLog {
     fun install(context: Context) {
         val dir = File(context.getExternalFilesDir(null) ?: context.filesDir, "crash").apply { mkdirs() }

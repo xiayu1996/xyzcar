@@ -11,13 +11,10 @@ import android.provider.Settings
 import java.io.File
 
 /**
- * 比亚迪车机接口（分屏、小迪语音）。思路来自 denza-lab 对 DiLink 5.1 固件的记录，代码自写。
- * - 系统事务编号一律按方法名从 IActivityTaskManager$Stub 解析，解析不到就不调用，绝不写死编号；
- * - UnionActivityManager 只主动调用 get / is 开头的只读方法，写入类只有实验开关触发的 setSplitScreenPersistentApp；
- * - 每次调用和结果都用 [DebugLog.kv] 记成 agent 可读的 k=v。
- *
- * 实车（Di150 / Android 14）已确认：TRANSACTION_* 可见；meta-data 让 7 分屏可用；
- * setSplitScreenPersistentApp 之后 3 分屏可用（固件内存，重启失效）。
+ * 思路来自 denza-lab 对 DiLink 5.1 固件的记录，代码自写。
+ * 事务编号只按方法名从 IActivityTaskManager$Stub 解析，解析不到就不调用，绝不写死；
+ * UnionActivityManager 只调 get / is 只读方法，唯一的写入是 setSplitScreenPersistentApp。
+ * 实车（Di150 / Android 14）：meta-data 让 7 分屏可用，setSplitScreenPersistentApp 让 3 分屏可用。
  */
 object BydBridge {
     const val VOICE_PKG = "com.byd.autovoice"
@@ -31,9 +28,6 @@ object BydBridge {
     private fun err(t: Throwable) = (t as? java.lang.reflect.InvocationTargetException)?.targetException?.let { "${it.javaClass.simpleName}:${it.message.orEmpty()}" }
         ?: "${t.javaClass.simpleName}:${t.message.orEmpty()}"
 
-    // ---------------- 分屏 ----------------
-
-    /** 全部 TRANSACTION_*（名字 → 编号）；[split] 是名字像分屏 / 多窗口的子集 */
     data class Transactions(val all: Map<String, Int>, val error: String?) {
         val split: Map<String, Int> get() = all.filterKeys { SPLIT_NAME.containsMatchIn(it) }
     }
@@ -50,7 +44,6 @@ object BydBridge {
     private fun activityTask(): IBinder? = Class.forName("android.os.ServiceManager")
         .getMethod("getService", String::class.java).invoke(null, "activity_task") as? IBinder
 
-    /** 按方法名调用一个参数为包名的事务；名字解析不到返回 null（不调用） */
     private fun callWithPackage(method: String, pkg: String, replyInt: Boolean): Result<Int?> = runCatching {
         val code = transactions().all[method] ?: return Result.success(null)
         val binder = activityTask() ?: error("no activity_task binder")
@@ -72,10 +65,6 @@ object BydBridge {
     private fun unionInstance(cls: Class<*>, ctx: Context): Any? =
         runCatching { cls.getMethod("getInstance", Context::class.java).invoke(null, ctx) }.getOrNull()
 
-    /**
-     * 调 UnionActivityManager 上所有叫 [name] 的重载：参数只能是 int / String / Context，
-     * 依次填 [area] / [pkg] / ctx。返回「签名 → 结果」；类不存在返回空。
-     */
     private fun unionCallAll(ctx: Context, name: String, pkg: String = ctx.packageName, area: Int = 0): List<Pair<String, String>> {
         val cls = unionClass() ?: return emptyList()
         val inst by lazy { unionInstance(cls, ctx) }
@@ -96,7 +85,6 @@ object BydBridge {
         }
     }
 
-    /** 反射结果转成一行：集合逐项、ComponentName 用短格式 */
     private fun describe(v: Any?): String = when (v) {
         null -> "null"
         is Collection<*> -> "[" + v.joinToString(";") { describe(it) } + "]"
@@ -106,7 +94,6 @@ object BydBridge {
         else -> v.toString()
     }.replace('\n', ' ').take(800)
 
-    /** UnionActivityManager / UnionWindowManager 的方法签名（name(参数)返回类型） */
     fun unionSignatures(): List<Pair<String, String>> = listOf(UNION_AM, "android.view.UnionWindowManager").map { name ->
         val cls = runCatching { Class.forName(name) }.getOrNull()
         "sig.${name.substringAfterLast('.')}" to (cls?.methods?.filter { it.declaringClass == cls }
@@ -114,7 +101,6 @@ object BydBridge {
             ?.distinct()?.sorted()?.joinToString(" ") ?: "absent")
     }
 
-    /** 「是否支持分屏」查询：只在恰好一个名字像 isSupport…Split… 时走事务，否则走 Union */
     fun isSupportSplit(pkg: String, ctx: Context? = null): String {
         val names = transactions().all.keys.filter { Regex("(?i)^is\\w*support\\w*split").containsMatchIn(it) }
         if (names.size != 1) {
@@ -124,10 +110,7 @@ object BydBridge {
         return callWithPackage(names[0], pkg, replyInt = true).fold({ "${it ?: "not_called"}" }, { "error:" + err(it) })
     }
 
-    /**
-     * 分屏探针（只读）：「选择分屏应用」列表大概率来自 getSplitScreenListByAreaId，
-     * 逐个区域读出来，对照本应用和 Apple Music（它在列表里、本应用不在）。
-     */
+    /** 「选择分屏应用」列表大概率来自 getSplitScreenListByAreaId；Apple Music 在列表里、本应用不在，拿来对照 */
     fun splitProbe(ctx: Context): List<Pair<String, String>> {
         val tx = transactions()
         val out = mutableListOf(
@@ -148,7 +131,6 @@ object BydBridge {
         return out + splitSettings(ctx)
     }
 
-    /** 把包加入系统的分屏常驻列表（固件内存里，重启车机后清空）。实验开关打开时每次启动调用 */
     fun addPersistentSplitApp(ctx: Context): String {
         var via = "tx"
         var r = callWithPackage("setSplitScreenPersistentApp", ctx.packageName, replyInt = false).fold(
@@ -160,7 +142,6 @@ object BydBridge {
         return if (ok) "已请求（3 分屏可用；车机重启后需再打开本应用一次）" else "失败：$r"
     }
 
-    /** 分屏相关的系统设置（可能因系统限制读不到，记录原因） */
     fun splitSettings(ctx: Context): List<Pair<String, String>> {
         val r = ctx.contentResolver
         fun sys(k: String) = runCatching { Settings.System.getString(r, k) ?: "null" }.getOrElse { "error:${it.javaClass.simpleName}" }
@@ -170,25 +151,19 @@ object BydBridge {
             listOf("force_resizable_activities", "enable_freeform_support").map { "settings.global.$it" to glob(it) }
     }
 
-    /** 本应用清单里的比亚迪分屏标记是否生效（系统读到的 meta-data） */
     fun splitMetaData(ctx: Context): String = runCatching {
         val ai = ctx.packageManager.getApplicationInfo(ctx.packageName, android.content.pm.PackageManager.GET_META_DATA)
         ai.metaData?.get("BYD_SUPPORT_SPLIT_ACTIVITY")?.let { "$it(${it.javaClass.simpleName})" } ?: "absent"
     }.getOrElse { "error:${it.javaClass.simpleName}" }
 
-    // ---------------- 小迪语音 ----------------
-
-    /** 读小迪的一个默认应用设置（值是包名）；读不到返回 null */
+    /** 小迪的默认应用设置，值是包名 */
     fun readSwitch(ctx: Context, key: String): String? = runCatching {
         ctx.contentResolver.query(PERSON_BEAN, arrayOf("VALUE"), "SETTING=?", arrayOf(key), null)?.use { c ->
             if (c.count == 1 && c.moveToFirst()) c.getString(0).orEmpty() else null
         }
     }.getOrNull()
 
-    /**
-     * 小迪设置表（只读）：所有键名；值是包名、短数字、布尔的照写，其他值只记长度和里面出现的包名
-     * （个人设置可能有地址、昵称等，不记原文）。
-     */
+    /** 只照写包名、短数字、布尔；其他值只记长度和包名，因为个人设置里可能有地址、昵称 */
     fun voiceProbe(ctx: Context): List<Pair<String, String>> {
         val ver = runCatching { ctx.packageManager.getPackageInfo(VOICE_PKG, 0).versionName ?: "?" }.getOrNull()
             ?: return listOf("voice.version" to "absent")
@@ -212,7 +187,6 @@ object BydBridge {
         return out
     }
 
-    /** 条件写入：只有当前值等于 [expected] 时才改成 [value]，返回是否成功（以读回为准） */
     private fun writeSwitch(ctx: Context, key: String, expected: String, value: String): Boolean {
         require(PKG.matches(value))
         var error: String? = null
@@ -224,7 +198,6 @@ object BydBridge {
         return back == value
     }
 
-    /** 小迪默认音乐设为本应用；原值存到 [LocalStore.musicOriginal]，返回给界面的说明 */
     fun takeMusicRole(ctx: Context, store: LocalStore): String {
         val cur = readSwitch(ctx, MUSIC_SWITCH) ?: return "读不到小迪的默认音乐设置".also { DebugLog.kv("voice", "take_music", "result" to "read_failed") }
         if (cur == ctx.packageName) return "已经是本应用".also { DebugLog.kv("voice", "take_music", "result" to "already") }
@@ -232,7 +205,7 @@ object BydBridge {
         return if (writeSwitch(ctx, MUSIC_SWITCH, cur, ctx.packageName)) "已设为本应用（原来是 $cur）" else "设置失败（系统没接受写入）"
     }
 
-    /** 恢复原来的默认音乐；只有当前仍是本应用时才改，避免覆盖用户在系统里另选的应用 */
+    /** 只有当前仍是本应用时才恢复，避免覆盖用户在系统里另选的应用 */
     fun restoreMusicRole(ctx: Context, store: LocalStore): String {
         val cur = readSwitch(ctx, MUSIC_SWITCH) ?: return "读不到小迪的默认音乐设置".also { DebugLog.kv("voice", "restore_music", "result" to "read_failed") }
         if (cur != ctx.packageName) return "当前是 $cur，不需要恢复".also { DebugLog.kv("voice", "restore_music", "result" to "skip", "current" to cur) }
@@ -240,9 +213,7 @@ object BydBridge {
         return if (writeSwitch(ctx, MUSIC_SWITCH, cur, orig)) "已恢复为 $orig" else "恢复失败（系统没接受写入）"
     }
 
-    // ---------------- 媒体中心（音乐源列表 / 底部卡片） ----------------
-
-    /** 系统媒体相关应用：国内媒体中心、海外固件的本地音乐（合作应用名单在它里面）、小迪 */
+    /** localmusic 是海外固件的本地音乐，合作应用名单在它里面 */
     val MEDIA_PKGS = listOf("com.byd.mediacenter", "com.byd.localmusic", VOICE_PKG)
     private val MEDIA_ACTIONS = listOf(
         "byd.intent.action.START_MEDIA", "byd.intent.action.SWITCH_MEDIA_MODE",
@@ -250,10 +221,7 @@ object BydBridge {
     )
     private const val MAX_APK_EXPORT = 300L * 1024 * 1024
 
-    /**
-     * 只读：媒体中心的版本、对外开放的组件和所需权限、清单里的自定义 action，
-     * 车机上所有提供 MediaBrowserService 的应用，以及有没有海外固件那种 com.fce.* 助手包。
-     */
+    /** com.fce.* 是海外固件的助手包 */
     fun mediaProbe(ctx: Context): List<Pair<String, String>> {
         val pm = ctx.packageManager
         val out = mutableListOf<Pair<String, String>>()
@@ -286,10 +254,7 @@ object BydBridge {
         return out
     }
 
-    /**
-     * 把系统媒体应用的安装包复制到「下载/xyzcar/」和 U 盘，交给开发者离线分析音乐源名单是怎么定的。
-     * 只读系统目录里本来就公开可读的文件，不改任何东西；超过 300 MB 的跳过。
-     */
+    /** 导出给开发者离线分析音乐源名单怎么定的；只读本来就公开可读的系统文件 */
     fun exportMediaApks(ctx: Context): List<String> {
         val pm = ctx.packageManager
         return MEDIA_PKGS.flatMap { pkg ->

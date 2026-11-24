@@ -63,7 +63,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 结果说明框：有内容时展开，内容变化淡入淡出 */
 @Composable
 private fun ResultBox(text: String) {
     val x = Xyz
@@ -74,7 +73,7 @@ private fun ResultBox(text: String) {
     }
 }
 
-/** 设置里的「车机测试」：临时测试用，默认关闭，每次操作的结果写进报告的日志 */
+/** 临时测试用，默认关闭 */
 @Composable
 internal fun CarLabSection(store: com.ryan.xyzcar.data.LocalStore = App.instance.local) {
     val x = Xyz
@@ -114,12 +113,7 @@ internal fun LabSwitch(title: String, hint: String, checked: Boolean, onChange: 
     Hairline()
 }
 
-/**
- * 导出给开发者（agent）的报告，放在车机信息页顶部。
- * - 保存报告文件：存到「下载/xyzcar/」和 U 盘，用车机文件管理复制走；
- * - 手机扫码下载：车机临时开一个只读网页，二维码里只是网址，手机浏览器打开即可，不经过第三方服务器；
- * - 导出媒体中心安装包：给开发者离线分析音乐源名单怎么定的。
- */
+/** 扫码下载由车机临时开只读网页，不经第三方服务器；媒体中心安装包供离线分析音乐源名单 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ExportBar() {
@@ -166,7 +160,7 @@ internal fun ExportBar() {
     share?.let { s -> LanShareDialog(s) { LanShare.stop(); share = null } }
 }
 
-/** 手机下载报告：左边说明和关闭按钮（驾驶位一侧），右边一个网址二维码；到时间自动关闭 */
+/** 关闭按钮在左（驾驶位一侧）；到时间自动关闭 */
 @Composable
 private fun LanShareDialog(s: LanShare.Session, onClose: () -> Unit) {
     LaunchedEffect(s) {

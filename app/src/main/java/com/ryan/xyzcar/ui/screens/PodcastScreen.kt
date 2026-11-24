@@ -41,7 +41,6 @@ import com.ryan.xyzcar.ui.components.ScreenHeader
 import com.ryan.xyzcar.ui.components.SkeletonRows
 import com.ryan.xyzcar.ui.theme.Dims
 
-/** F4 节目详情 + 单集列表（倒序、分页、显示已听进度） */
 @Composable
 fun PodcastScreen(vm: AppViewModel, pid: String, onBack: (() -> Unit)?) {
     val info = vm.loadHolder("pod:$pid:info") { force -> vm.repo.podcast(pid, force) }
@@ -97,7 +96,6 @@ private fun PodcastHeader(vm: AppViewModel, p: Podcast, onUpdated: (Podcast) -> 
     }
 }
 
-/** F11 订阅管理（点「已订阅」即取消）：订阅 / 取消订阅、星标，结果直接写回服务端（手机端同步） */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SubscribeButtons(vm: AppViewModel, p: Podcast, onUpdated: (Podcast) -> Unit) {

@@ -98,7 +98,7 @@ data class PlayerActions(
     val toggleTranscript: () -> Unit = {},
 )
 
-/** 全屏播放页的文字稿：null = 没打开 */
+/** null 表示文字稿没打开 */
 sealed interface TranscriptUi {
     data object Loading : TranscriptUi
     data class None(val message: String) : TranscriptUi
@@ -107,10 +107,7 @@ sealed interface TranscriptUi {
 
 private fun speedText(speed: Float) = (if (speed % 1f == 0f) "%.1f".format(speed) else "%.2f".format(speed).trimEnd('0')) + "x"
 
-/**
- * 快退 / 快进图标：同一个回转箭头（快进水平镜像）+ 同一套数字字形，两边大小、粗细一致。
- * 数字按图标尺寸换算，不跟系统字号缩放，免得放大字号后撑出圆圈。
- */
+/** 数字按图标尺寸换算、不跟系统字号缩放，免得放大字号后撑出圆圈 */
 @Composable
 private fun SkipIcon(seconds: Int, forward: Boolean, tint: Color, size: Dp) {
     val numSize = with(LocalDensity.current) { (size * 0.3f).toSp() }
@@ -131,7 +128,6 @@ private fun SkipButton(forward: Boolean, tint: Color, iconSize: Dp, enabled: Boo
     ) { SkipIcon(seconds, forward, if (enabled) tint else tint.copy(alpha = 0.3f), iconSize) }
 }
 
-/** 实心播放键：整组控制里唯一的实心元素；缓冲时图标换成转圈 */
 @Composable
 private fun PlayFab(playing: Boolean, buffering: Boolean, enabled: Boolean, size: Dp, bg: Color, fg: Color, onClick: () -> Unit) {
     Box(
@@ -148,13 +144,7 @@ private fun PlayFab(playing: Boolean, buffering: Boolean, enabled: Boolean, size
     }
 }
 
-// ---------------- 迷你播放条 ----------------
-
-/**
- * 底部迷你播放条（官方的白色悬浮卡片）：后退 15 · 播放（实心）· 前进 30 | 封面 | 标题 / 时间 · 节目 | 播放列表；
- * 底边一条细进度线（Android 车机「最小化控制栏」的做法），不再在播放键外画进度环。
- * 控制组放在最左边：左舵车驾驶员离屏幕左侧最近。窄屏只留播放键。点卡片其余位置展开全屏播放页。
- */
+/** 控制组放最左：左舵车驾驶员离屏幕左侧最近 */
 @Composable
 fun MiniPlayer(state: PlayerUi, queueSize: Int, a: PlayerActions, modifier: Modifier = Modifier) {
     val x = Xyz
@@ -218,24 +208,17 @@ fun MiniPlayer(state: PlayerUi, queueSize: Int, a: PlayerActions, modifier: Modi
     }
 }
 
-// ---------------- 全屏播放页 ----------------
-
-/** 播放页强调色：节目色里在深色底上够亮的那个，没有就用品牌青 */
 private fun playerAccent(c: ThemeColor?): Color {
     val candidates = listOfNotNull(c?.light, c?.original).mapNotNull { parseHex(it) }
     return candidates.firstOrNull { it.luminance() > 0.28f } ?: Color(0xFF56BBE8)
 }
 
-/** 背景：节目色压暗后做对角渐变（封面取色），没有节目色时用深蓝灰 */
 private fun playerBackground(c: ThemeColor?): Brush {
     val base = parseHex(c?.dark ?: "") ?: parseHex(c?.original ?: "") ?: Color(0xFF2A3542)
     val top = lerp(base, Color(0xFF15171C), 0.55f)
     return Brush.linearGradient(listOf(top, lerp(top, Color(0xFF111217), 0.5f), Color(0xFF111217)))
 }
 
-/**
- * 进度条：可见 10dp、触控热区 72dp；可点按跳转、可拖动（拖动结束才 seek）。
- */
 @Composable
 fun SeekBar(state: PlayerUi, accent: Color, track: Color, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
     var dragging by remember { mutableStateOf<Float?>(null) }
@@ -273,7 +256,6 @@ fun SeekBar(state: PlayerUi, accent: Color, track: Color, onSeek: (Long) -> Unit
     }
 }
 
-/** 播放页下方的次要操作：同一形状、同一高度、等宽；[active] 时用强调色（如定时已开） */
 @Composable
 private fun PillAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, accent: Color, stacked: Boolean,
@@ -304,7 +286,7 @@ private fun WhiteIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, des
     }
 }
 
-/** 全屏播放页：横屏左控制右封面（控制靠驾驶位），竖屏 / 分屏上下排列。始终深色底，强调色取自节目封面 */
+/** 横屏时控制在左，靠驾驶位一侧 */
 @Composable
 fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifier: Modifier = Modifier, transcript: TranscriptUi? = null) {
     val ep = state.episode
@@ -316,7 +298,7 @@ fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifi
             .pointerInput(Unit) { detectTapGestures { } }, // 吃掉点击，不穿透到下面的页面
     ) {
         val landscape = maxWidth > maxHeight * 1.15f && maxWidth >= 720.dp
-        // 竖排时高度够才把大封面放上面；分屏这类矮窗口改成小封面和标题并排，保证控制一屏放得下
+        // 分屏这类矮窗口改成小封面和标题并排，保证控制一屏放得下
         val winHeight = maxHeight
         val bigCover = landscape || maxHeight >= 860.dp
         val coverSize = when {
@@ -333,7 +315,6 @@ fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifi
                     }
                 }
             }
-            // 文字稿只在放得下的布局里提供（横屏、或竖排有大封面的位置），和封面互相切换
             val canTranscript = landscape || bigCover
             val showTranscript = canTranscript && transcript != null
             if (landscape) {
@@ -349,7 +330,7 @@ fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifi
                     }
                 }
             } else {
-                // 放得下时垂直居中；窗口特别矮（分屏缩成小窗）时可以上下滑，不会把按钮挤出屏幕
+                // 窗口特别矮（分屏小窗）时可上下滑，不会把按钮挤出屏幕
                 val viewport = winHeight - 32.dp - 72.dp
                 Column(
                     Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = viewport),
@@ -410,8 +391,6 @@ private fun PlayerControls(
                 Text(if (state.durationMs > 0) "-" + Fmt.clock(state.durationMs - state.positionMs) else "", style = num, color = Color.White.copy(alpha = 0.85f))
             }
         }
-        // 主控制：倍速 · 后退 · 播放 · 前进 · 定时（官方的排法）；播放键是唯一的实心元素，其余同一尺寸、无底色。
-        // 太窄放不下五个时只留中间三个，倍速和定时移到下面一行
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val roomy = maxWidth >= 440.dp
             val k = (maxWidth / 640.dp).coerceIn(0.6f, 1f)
@@ -423,7 +402,6 @@ private fun PlayerControls(
                     SkipButton(true, Color.White, 68.dp * k, ep != null, a.forward)
                     if (roomy) SleepButton(sleepMinutesLeft, accent, a.cycleSleep)
                 }
-                // 下面一行固定三个位置：左「简介」、中「播放列表」、右「文字稿」。以后再加功能放进右侧的「更多」，不加第二行
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Start) {
                         if (!roomy) { SpeedButton(state.speed, accent, a.cycleSpeed); SleepButton(sleepMinutesLeft, accent, a.cycleSleep) }
@@ -442,7 +420,6 @@ private fun PlayerControls(
     }
 }
 
-/** 次要操作键：统一 72dp 圆形、无底色；打开状态用强调色 + 浅底，切换有渐变 */
 @Composable
 private fun QuietButton(desc: String, accent: Color, active: Boolean = false, onClick: () -> Unit, content: @Composable (Color) -> Unit) {
     val fg by animateColorAsState(if (active) accent else Color.White.copy(alpha = 0.85f), tween(250), label = "quietFg")
@@ -454,7 +431,6 @@ private fun QuietButton(desc: String, accent: Color, active: Boolean = false, on
     ) { content(fg) }
 }
 
-/** 倍速：直接显示当前倍速，点一下换下一档 */
 @Composable
 private fun SpeedButton(speed: Float, accent: Color, onClick: () -> Unit) =
     QuietButton("倍速 ${speedText(speed)}", accent, active = speed != 1f, onClick = onClick) { c ->
@@ -463,7 +439,6 @@ private fun SpeedButton(speed: Float, accent: Color, onClick: () -> Unit) =
         }
     }
 
-/** 定时关闭：月亮图标；开着时下面小字显示剩余分钟 */
 @Composable
 private fun SleepButton(minutesLeft: Int?, accent: Color, onClick: () -> Unit) =
     QuietButton(if (minutesLeft != null) "定时关闭，剩 $minutesLeft 分钟" else "定时关闭", accent, active = minutesLeft != null, onClick = onClick) { c ->
@@ -487,10 +462,6 @@ fun currentLine(lines: List<TranscriptLine>, positionMs: Long): Int {
     return ans
 }
 
-/**
- * 文字稿：当前这句高亮放大，其余变淡，播放时自动滚到当前句（停在上方三分之一处）。
- * 手动滑动后 5 秒内不自动滚；点某一句跳到那里播放。上下边缘渐隐
- */
 @Composable
 private fun TranscriptPane(t: TranscriptUi, positionMs: Long, accent: Color, onSeek: (Long) -> Unit, modifier: Modifier) {
     androidx.compose.animation.Crossfade(t, modifier, animationSpec = tween(300), label = "transcriptState") { s ->
@@ -509,9 +480,8 @@ private fun TranscriptPane(t: TranscriptUi, positionMs: Long, accent: Color, onS
 @Composable
 private fun TranscriptLines(lines: List<TranscriptLine>, positionMs: Long, accent: Color, onSeek: (Long) -> Unit) {
     val pos by androidx.compose.runtime.rememberUpdatedState(positionMs)
-    // 进度每 0.5 秒变一次，句子要几秒才换：只在换句时重组
+    // 进度每 0.5 秒变一次而句子几秒才换，只在换句时重组
     val current by remember(lines) { androidx.compose.runtime.derivedStateOf { currentLine(lines, pos) } }
-    // 打开时直接停在当前这句附近，不从头滚下来
     val list = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = (currentLine(lines, positionMs) - 2).coerceAtLeast(0))
     val dragged by list.interactionSource.collectIsDraggedAsState()
     var touchedAt by remember { mutableStateOf(0L) }
@@ -556,7 +526,6 @@ private fun TranscriptLines(lines: List<TranscriptLine>, positionMs: Long, accen
     }
 }
 
-/** 列表行里小的进度环（不带按钮），给需要单独显示进度的地方用 */
 @Composable
 fun ProgressRing(progress: Float, color: Color, size: Dp) {
     Canvas(Modifier.size(size).rotate(-90f)) {

@@ -14,7 +14,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 用 xyz 文档里的真实返回样例验证解析逻辑 */
 class ParsingTest {
     @OptIn(ExperimentalSerializationApi::class)
     private val json = Json { isLenient = true; allowTrailingComma = true; allowComments = true; ignoreUnknownKeys = true }
@@ -23,7 +22,7 @@ class ParsingTest {
 
     private fun res(name: String) = javaClass.classLoader!!.getResource(name)!!.readText()
 
-    /** 2026-11 实测的发现页结构（内容是编的，字段名和层级照实） */
+    /** 结构照 2026-11 实测，内容是编的 */
     @Test
     fun parseDiscovery2026() {
         fun ep(id: String) = """{"type":"EPISODE","eid":"$id","pid":"p1","title":"单集$id","duration":600,
@@ -42,12 +41,12 @@ class ParsingTest {
         assertEquals(listOf("e4"), sections[2].episodes.map { it.eid })
         assertEquals(listOf("e1", "e2"), sections[0].episodes.map { it.eid })
         assertEquals(listOf("e3"), sections[1].episodes.map { it.eid })
-        // 榜单带上 category，发现页据此换成完整榜单
+        // 发现页据 category 换成完整榜单
         assertEquals("HOT_EPISODES_IN_24_HOURS", sections[2].topCategory)
         assertEquals("", sections[0].topCategory)
     }
 
-    /** 文字稿：gzip 压缩的 [{text, startMs}]，空句子跳过、按时间排序；当前句按播放位置二分查找 */
+    /** 文字稿是 gzip 压缩的 [{text, startMs}] */
     @Test
     fun transcriptParsing() {
         val raw = """[{"text":"第二句","startMs":5000},{"text":"  ","startMs":7000},{"text":"第一句","startMs":1000.0}]"""
@@ -62,7 +61,7 @@ class ParsingTest {
         assertTrue(api.parseTranscript("not json").isEmpty())
     }
 
-    /** 列表里的单集不带 shownotes、简介截短；单集详情保留完整内容 */
+    /** 列表接口的单集不带 shownotes、简介截短 */
     @Test
     fun listEpisodesAreLite() {
         val root = json.parseToJsonElement(res("episode_detail.json")).jsonObject
@@ -96,11 +95,9 @@ class ParsingTest {
         val c = com.ryan.xyzcar.data.ThemeColor("#1A1A1A", "#ACACAC", "#0B0B0B")
         val dark = androidx.compose.material3.darkColorScheme(background = androidx.compose.ui.graphics.Color(0xFF0B0B0C), surface = androidx.compose.ui.graphics.Color(0xFF161618))
         val light = androidx.compose.material3.lightColorScheme(background = androidx.compose.ui.graphics.Color(0xFFF7F6F5), surface = androidx.compose.ui.graphics.Color.White)
-        // 深色底：原色太暗看不清，退到浅色变体
+        // 深色底上原色太暗，退到浅色变体
         assertEquals(com.ryan.xyzcar.ui.theme.parseHex("#ACACAC"), com.ryan.xyzcar.ui.theme.pickAccent(c, dark))
-        // 浅色底：原色可用
         assertEquals(com.ryan.xyzcar.ui.theme.parseHex("#1A1A1A"), com.ryan.xyzcar.ui.theme.pickAccent(c, light))
-        // 没有主题色：返回 null，沿用品牌色
         assertEquals(null, com.ryan.xyzcar.ui.theme.pickAccent(null, light))
     }
 
@@ -139,7 +136,7 @@ class ParsingTest {
         assertEquals(listOf(30, 725, 3723), ts.map { it.seconds })
     }
 
-    // ---------- 0.0.2 新接口（2026-11 实测的结构，内容是编的） ----------
+    // 以下样例结构照 2026-11 实测，内容是编的
 
     @Test
     fun parseCategoryEpisodesFillsPodcast() {
@@ -171,7 +168,6 @@ class ParsingTest {
         assertEquals("https://i.example/c1.png@small", cats[0].iconUrl)
     }
 
-    /** 账号接口还返回手机号等字段：只取 uid / 昵称 / 头像 */
     @Test
     fun parseUserIgnoresPrivateFields() {
         val r = json.parseToJsonElement("""{"data":{"uid":"u1","nickname":"昵称","phoneNumber":{"mobilePhoneNumber":"10000000000","areaCode":"+86"},
@@ -199,7 +195,7 @@ class ParsingTest {
         assertEquals("无聊斋", s.episodes[0].podcastTitle)
     }
 
-    /** 「未听 + 在听」筛选：服务端标记听完、或只剩最后 30 秒的都算听完 */
+    /** 服务端标记听完或只剩最后 30 秒都算听完 */
     @Test
     fun todoFilter() {
         val base = com.ryan.xyzcar.data.Episode("e", "p", "t", durationSec = 600)

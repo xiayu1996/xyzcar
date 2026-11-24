@@ -1,9 +1,6 @@
 package com.ryan.xyzcar.data
 
-/**
- * debug 包演示模式用的数据快照：只含公开内容（发现页、榜单、编辑精选、分类、节目和单集），不含账号数据和 token。
- * 由 `./scripts/login-check.sh dump` 生成到 app/src/debug/assets/demo_snapshot.json。
- */
+/** 只含公开内容，不含账号数据和 token；由 `./scripts/login-check.sh dump` 生成 */
 @kotlinx.serialization.Serializable
 data class DemoSnapshot(
     val podcasts: List<Podcast>,
@@ -16,7 +13,7 @@ data class DemoSnapshot(
     val podcastEpisodes: Map<String, List<Episode>> = emptyMap(),
 )
 
-/** 仅 debug 包的样例数据（不发任何请求）。有快照时用真实公开内容，没有时用下面的合成数据 */
+/** 有快照时用真实公开内容，没有时用下面的合成数据 */
 object DemoData {
     fun install(s: DemoSnapshot) {
         podcasts = s.podcasts; episodes = s.episodes; sections = s.sections
@@ -26,7 +23,6 @@ object DemoData {
         podcastEpisodes = s.podcastEpisodes
     }
 
-    /** 演示用文字稿：每 12 秒一句，覆盖前 20 分钟 */
     fun transcript(): List<TranscriptLine> {
         val s = listOf(
             "哈喽大家好，欢迎收听新一期的节目。", "今天我们想聊一个大家可能都遇到过的问题。", "先说说我自己最近的一个经历吧。",

@@ -80,9 +80,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-// ---------------- 搜索 ----------------
-
-/** 搜索结果分三栏：综合（服务端 ALL）/ 节目 / 单集（后两个可翻页） */
 private enum class SearchTab(val label: String, val type: String) { All("综合", "ALL"), Podcasts("节目", "PODCAST"), Episodes("单集", "EPISODE") }
 
 private class SearchState {
@@ -118,7 +115,6 @@ private class SearchState {
     fun clear() { job?.cancel(); query = ""; submitted = ""; result = null; error = null; loading = false }
 }
 
-/** 搜索框：浅灰圆角底，无描边（官方样式） */
 @Composable
 private fun SearchField(value: String, onChange: (String) -> Unit, onSearch: () -> Unit, onClear: () -> Unit, modifier: Modifier) {
     val x = Xyz
@@ -147,7 +143,6 @@ private fun SearchField(value: String, onChange: (String) -> Unit, onSearch: () 
     }
 }
 
-/** 搜索：大输入框 + 最近搜索 / 大家在搜；结果「综合」左节目右单集，关键词高亮 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SearchScreen(vm: AppViewModel) {
@@ -292,8 +287,6 @@ private fun <T> PagedBody(h: com.ryan.xyzcar.ui.PagedHolder<T>, empty: String, c
     }
 }
 
-// ---------------- 收听历史（在「我的」里） ----------------
-
 @Composable
 fun HistoryScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     val h = vm.pagedHolder<Episode>("history:list", { it.eid }) { key -> vm.repo.history(key) }
@@ -311,9 +304,6 @@ fun HistoryScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     }
 }
 
-// ---------------- 播放列表 ----------------
-
-/** 播放列表：本地保存；当前单集播完自动播放第一项。上移 / 下移 / 移除有位移动画 */
 @Composable
 fun QueueScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     val q = remember(vm.queueVersion) { vm.repo.queue }
@@ -346,10 +336,7 @@ fun QueueScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     }
 }
 
-/**
- * 播放列表行：单集行 + 两个同样式的浅底圆钮「移到最前」「移出」。
- * 车里点上下箭头一格格挪太费事，排序只保留「移到最前」（想先听哪集就点哪集）；第一项不显示但占位，两列按钮上下对齐。
- */
+/** 车里逐格挪太费事，排序只留「移到最前」；第一项不显示按钮但占位，两列对齐 */
 @Composable
 internal fun QueueRow(
     ep: Episode, first: Boolean,

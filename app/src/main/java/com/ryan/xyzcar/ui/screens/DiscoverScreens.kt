@@ -80,15 +80,13 @@ import com.ryan.xyzcar.ui.theme.Dims
 import com.ryan.xyzcar.ui.theme.Xyz
 import kotlinx.coroutines.launch
 
-/** 「为你推荐」每次「换一批」拿到的 3 集，按先后排在前面（只在点按钮时请求） */
+/** 「换一批」追加的推荐（只在点按钮时请求） */
 private class DiscoverExtra {
     var refreshed by mutableStateOf<List<Episode>>(emptyList())
     var refreshing by mutableStateOf(false)
-    /** 榜单区当前选中的是第几个榜 */
     var topTab by mutableStateOf(0)
 }
 
-/** 搜索入口（灰色圆角条，点了切到「搜索」） */
 @Composable
 fun SearchPill(modifier: Modifier = Modifier, onClick: () -> Unit) {
     val x = Xyz
@@ -107,10 +105,6 @@ fun SearchPill(modifier: Modifier = Modifier, onClick: () -> Unit) {
     }
 }
 
-/**
- * 发现页：搜索条 + 入口色块 + 各区块。单集区块都是横向分页（每列 3 集，左右滑看更多）：
- * 三个榜单合成一块，标题处切换；榜单和编辑精选显示完整的 15 集
- */
 @Composable
 fun DiscoverScreen(vm: AppViewModel) {
     val h = vm.loadHolder("tab:Discover:data") { force -> vm.repo.discovery(force) }
@@ -132,7 +126,7 @@ fun DiscoverScreen(vm: AppViewModel) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     item { ColorChip("分类", Chroma(x.accentFill, x.accentBorder, x.accentText), Icons.Filled.GridView) { vm.categoriesOpen = true; vm.selectTab(Tab.Recommend) } }
                     item { ColorChip("编辑精选", x.peach) { vm.push(Route.EditorPicks) } }
-                    // 三个榜单在下面的榜单区切换；「新节目广场」接口 2026-11 起总返回空列表，入口隐藏
+                    // 「新节目广场」接口 2026-11 起总返回空列表，入口隐藏
                 }
             }
             val sections = h.data
@@ -181,7 +175,7 @@ fun DiscoverScreen(vm: AppViewModel) {
                 val eps = if (isRecommend) (extra.refreshed + sec.episodes).distinctBy { it.eid } else sec.episodes
                 if (eps.isNotEmpty()) {
                     item("sec-$i-pager") {
-                        // 「换一批」后新的一批排在最前，分页回到第一列
+                        // contentKey 取首集：换一批后分页回到第一列
                         AnimatedContent(eps, Modifier.animateItem(), contentKey = { it.firstOrNull()?.eid }, transitionSpec = { fadeIn(tween(350)) togetherWith fadeOut(tween(200)) }, label = "recPager") { list ->
                             EpisodePager(list, playingEid, actions::open, actions::play)
                         }
@@ -193,12 +187,8 @@ fun DiscoverScreen(vm: AppViewModel) {
     }
 }
 
-/** 「换一批」最多攒多少集（每批 3 集） */
 private const val MAX_EXTRA = 27
 
-/**
- * 榜单区（官方样式）：标题行是三个榜名，点哪个切哪个（左右滑入），右侧「完整榜单」；下面是这个榜的 15 集分页
- */
 @Composable
 internal fun TopListsBlock(
     tops: List<DiscoverySection>,
@@ -255,11 +245,7 @@ internal fun TopListsBlock(
     }
 }
 
-/**
- * 横向分页：每列 3 集，一屏放整数列（宽屏 2 列、窄屏 1 列），滑动吸附到整列，下方圆点表示位置。
- * 不再露出下一列的半截：播放键在行首，露出的那截只剩一排播放键，看着像每集有两个播放键。
- * [ranked]：榜单，行首加名次
- */
+/** 一屏只放整数列：露出下一列半截时只剩一排播放键，像每集有两个播放键 */
 @Composable
 fun EpisodePager(eps: List<Episode>, playingEid: String?, onOpen: (Episode) -> Unit, onPlay: (Episode) -> Unit, ranked: Boolean = false) {
     val cols = eps.chunked(3)
@@ -306,7 +292,6 @@ fun EpisodePager(eps: List<Episode>, playingEid: String?, onOpen: (Episode) -> U
     }
 }
 
-/** 横向节目卡片：封面 + 标题 */
 @Composable
 fun PodcastCards(pods: List<Podcast>, onOpen: (Podcast) -> Unit) {
     LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
@@ -320,7 +305,6 @@ fun PodcastCards(pods: List<Podcast>, onOpen: (Podcast) -> Unit) {
     }
 }
 
-/** 单集列表页的通用写法（榜单） */
 @Composable
 private fun EpisodeListScreen(vm: AppViewModel, title: String, onBack: (() -> Unit)?, holderKey: String, load: suspend (Boolean) -> List<Episode>) {
     val h = vm.loadHolder(holderKey, load)

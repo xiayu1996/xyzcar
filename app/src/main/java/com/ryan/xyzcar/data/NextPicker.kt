@@ -3,13 +3,8 @@ package com.ryan.xyzcar.data
 import java.time.Instant
 
 /**
- * 播放列表空了、当前单集听完后自动接着播哪一集。听完本身是信号：认可这个节目、还有时间继续听。
- * 按用户主动表达过的意愿从强到弱：
- * 1. 补旧集：刚听完的不是该节目最新一集，紧挨着的更新一集还没听完 → 接着播它
- * 2. 听了一半：收听历史里没听完的，按最后收听时间排；只听了开头（< [MIN_STARTED_SEC]）或超过 [STALE_DAYS] 天没碰的算放弃
- * 3. 订阅新更新（默认关）：[FRESH_DAYS] 天内发布、还没听过的
- * 都没有就停，不去推荐里找。付费单集、用户换掉过的单集、[exclude] 里的不选；
- * 只剩不到 [MIN_LEFT_SEC] 的也不选（多半是片尾 / 广告，用户其实算听完了，接上去几十秒又要再换）。纯函数，方便测试
+ * 按用户意愿从强到弱选：同节目紧挨着的更新一集 → 没听完的 → 订阅新更新；只听了开头或超过 [STALE_DAYS] 天没碰的算放弃。
+ * 剩不到 [MIN_LEFT_SEC] 的多半是片尾 / 广告，用户其实算听完了，接上去几十秒又要再换
  */
 object NextPicker {
     const val MIN_STARTED_SEC = 120
@@ -20,12 +15,11 @@ object NextPicker {
 
     enum class Reason(val label: String) { Continue("接着补这个节目"), InProgress("接着听没听完的"), Fresh("订阅新更新") }
     data class Pick(val episode: Episode, val reason: Reason)
-    /** 收听历史的一项：单集（含进度）和最后收听时间 */
     data class Played(val episode: Episode, val playedAtMs: Long)
 
     fun choose(
         finished: Episode,
-        /** 同一节目的单集，最新在前，带进度；没取到就传空 */
+        /** 最新在前，带进度 */
         sameShow: List<Episode>,
         history: List<Played>,
         inbox: List<Episode>,

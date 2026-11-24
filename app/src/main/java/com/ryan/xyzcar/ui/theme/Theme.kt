@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ryan.xyzcar.data.ThemeColor
 
-/** 车机尺寸规范：触控区域不小于 72dp，相邻间距 16dp */
+/** 车机触控规范：触控区 ≥ 72dp，间距 16dp */
 object Dims {
     val touch = 72.dp
     val gap = 16.dp
@@ -40,12 +40,6 @@ object Dims {
     val wide = 960.dp
 }
 
-/*
- * 设计语言（按官方 iOS 日间截图提炼）：
- * - 白底 / 近黑底，粗黑大标题，灰色辅助文字；分区标题用品牌青色
- * - 强调色只用于图标、播放键和选中态，浅青底 + 深青字做按钮
- * - 入口胶囊用浅色块（青 / 桃 / 青柠 / 薰衣草），推荐卡片用节目封面取色的浅底
- */
 @Immutable
 data class XyzColors(
     val dark: Boolean,
@@ -66,7 +60,6 @@ data class XyzColors(
     val shadow: Color,
 )
 
-/** 色块胶囊：底 / 描边 / 文字 */
 @Immutable
 data class Chroma(val bg: Color, val border: Color, val fg: Color)
 
@@ -92,10 +85,9 @@ val DarkColors = XyzColors(
     shadow = Color(0x00000000),
 )
 
-/** 主题切换时颜色每帧都在变：用普通 CompositionLocal，只重组读到它的地方 */
+/** 主题切换动画每帧改色：用 compositionLocalOf 只重组读取处 */
 val LocalXyz = compositionLocalOf { LightColors }
 
-/** 当前配色（页面里统一用这个取色） */
 val Xyz: XyzColors @Composable get() = LocalXyz.current
 
 private fun scheme(c: XyzColors): ColorScheme {
@@ -123,7 +115,6 @@ private fun scheme(c: XyzColors): ColorScheme {
     )
 }
 
-/** 主文字 24sp、辅助 20sp；大标题 40sp 粗黑 */
 private val CarTypography = Typography(
     displaySmall = TextStyle(fontSize = 44.sp, lineHeight = 52.sp, fontWeight = FontWeight.ExtraBold),
     headlineLarge = TextStyle(fontSize = 40.sp, lineHeight = 48.sp, fontWeight = FontWeight.ExtraBold),
@@ -141,7 +132,6 @@ private val CarTypography = Typography(
 /** 时间、计数用的等宽数字 */
 val NumberStyle = TextStyle(fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold)
 
-/** 外观设置：浅色 / 深色 / 跟随系统 */
 enum class ThemeMode(val key: String, val label: String) {
     Light("light", "浅色"), Dark("dark", "深色"), System("system", "跟随系统");
     companion object { fun of(key: String) = entries.firstOrNull { it.key == key } ?: System }
@@ -162,7 +152,6 @@ private fun animated(c: Color, label: String): Color = animateColorAsState(c, co
 @Composable
 private fun animated(c: Chroma): Chroma = Chroma(animated(c.bg, "cb"), animated(c.border, "cbd"), animated(c.fg, "cf"))
 
-/** 切换深浅色时所有颜色 450ms 渐变，不是一下子闪过去 */
 @Composable
 private fun animate(t: XyzColors): XyzColors = XyzColors(
     dark = t.dark,
@@ -197,9 +186,7 @@ private fun contrast(a: Color, b: Color): Float {
     return if (la > lb) la / lb else lb / la
 }
 
-/**
- * 从节目主题色里选一个在当前底色上看得清的颜色（对比度 ≥ 3:1），都不合格返回 null（沿用品牌色）。
- */
+/** 对比度都不足 3:1 时返回 null，沿用品牌色 */
 fun pickAccent(c: ThemeColor?, scheme: ColorScheme): Color? {
     if (c == null) return null
     val darkBg = scheme.background.luminance() < 0.5f
@@ -209,15 +196,11 @@ fun pickAccent(c: ThemeColor?, scheme: ColorScheme): Color? {
     }
 }
 
-/**
- * 推荐卡片的浅色底：节目色和底色混合。浅色模式接近白、深色模式接近卡片色，文字仍用正文色。
- */
 fun tintOf(c: ThemeColor?, x: XyzColors): Color {
     val base = parseHex(c?.light?.ifEmpty { c.original } ?: "") ?: parseHex(c?.original ?: "") ?: x.accent
     return base.copy(alpha = if (x.dark) 0.20f else 0.22f).compositeOver(x.card)
 }
 
-/** 用节目主题色替换强调色：页面里的主按钮、进度条、时间戳链接都会跟着变 */
 @Composable
 fun Accented(color: ThemeColor?, content: @Composable () -> Unit) {
     val base = MaterialTheme.colorScheme

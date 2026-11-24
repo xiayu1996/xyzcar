@@ -51,17 +51,16 @@ import com.ryan.xyzcar.ui.errorText
 import com.ryan.xyzcar.ui.theme.Dims
 import kotlinx.coroutines.delay
 
-/** 一个二维码最多等 3 分钟，过了就显示「已失效」，点一下重新生成 */
 private const val QR_WAIT_MS = 180_000L
 private const val POLL_MS = 1_000L
 
-/** 二维码矩阵：每个模块 1 格，四周留 2 格白边。纯 Java，界面和登录验证工具共用 */
+/** 纯 Java，界面和登录验证工具共用 */
 fun qrMatrix(text: String, ecc: ErrorCorrectionLevel = ErrorCorrectionLevel.M, margin: Int = 2): BitMatrix = QRCodeWriter().encode(
     text, BarcodeFormat.QR_CODE, 0, 0,
     mapOf(EncodeHintType.MARGIN to margin, EncodeHintType.ERROR_CORRECTION to ecc),
 )
 
-/** F1 登录：扫码登录（短信验证码接口要求人机验证，第三方客户端用不了） */
+/** 只做扫码登录：短信验证码接口要求人机验证 */
 @Composable
 fun LoginScreen(vm: AppViewModel) {
     var qr by remember { mutableStateOf<LoginQr?>(null) }
@@ -69,7 +68,6 @@ fun LoginScreen(vm: AppViewModel) {
     var error by remember { mutableStateOf<String?>(null) }
     var round by remember { mutableIntStateOf(0) }
 
-    // 离开登录页时协程自动取消；每轮有 3 分钟上限
     LaunchedEffect(round) {
         qr = null; error = null; state = QrState.WAITING
         val q = runCatching { vm.repo.api.createLoginQr() }.getOrElse { error = errorText(it); return@LaunchedEffect }
@@ -96,7 +94,7 @@ fun LoginScreen(vm: AppViewModel) {
     )
 }
 
-/** 无状态的登录界面，截图测试直接用 */
+/** 无状态，供截图测试直接用 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LoginContent(qr: LoginQr?, state: QrState, error: String?, onRefresh: () -> Unit, onDemo: (() -> Unit)?, onCancel: (() -> Unit)? = null) {
@@ -133,7 +131,7 @@ fun LoginContent(qr: LoginQr?, state: QrState, error: String?, onRefresh: () -> 
                         Text("取消，回到原账号", style = MaterialTheme.typography.titleMedium)
                     }
                 }
-                // 仅 debug 包：不登录、不发请求，用样例数据看界面（云测试 / 截图用）
+                // 仅 debug 包：免登录、不发请求，用样例数据看界面（云测试 / 截图）
                 if (onDemo != null) {
                     OutlinedButton(onClick = onDemo, modifier = Modifier.heightIn(min = Dims.touch)) {
                         Text("演示模式（调试包）", style = MaterialTheme.typography.titleMedium)

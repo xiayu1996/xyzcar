@@ -25,7 +25,7 @@ import com.ryan.xyzcar.data.DebugLog
 import kotlinx.serialization.json.JsonElement
 import java.io.IOException
 
-/** 和官方 App 一样的五个主入口：收听历史、设置在「我的」里 */
+/** 收听历史、设置放在「我的」里，与官方一致 */
 enum class Tab(val label: String) { Discover("发现"), Recommend("推荐"), Subscriptions("订阅"), Search("搜索"), Me("我的") }
 
 sealed class Route(val key: String) {
@@ -40,7 +40,6 @@ sealed class Route(val key: String) {
     data object Diagnostics : Route("diag")
 }
 
-/** 页面切换方向：决定转场动画往哪边滑 */
 enum class NavDir { Forward, Back, TabUp, TabDown }
 
 fun errorText(e: Throwable): String = when (e) {
@@ -50,7 +49,6 @@ fun errorText(e: Throwable): String = when (e) {
     else -> "出错了：${e.message ?: e.javaClass.simpleName}"
 }
 
-/** 单次加载的状态 */
 class LoadHolder<T : Any>(
     private val scope: CoroutineScope,
     private val onAuthExpired: () -> Unit,
@@ -82,7 +80,6 @@ class LoadHolder<T : Any>(
     fun ensureLoaded() { if (data == null && !loading) load() }
 }
 
-/** 分页列表的状态；滚动到底调用 loadMore */
 class PagedHolder<T>(
     private val scope: CoroutineScope,
     private val onAuthExpired: () -> Unit,
@@ -102,16 +99,12 @@ class PagedHolder<T>(
         fetch(reset = true)
     }
 
-    /**
-     * 加载下一页（滚动到底时自动调用）。上次失败后不再自动重试，要用户点「重试」（[retry]），
-     * 否则断网时滚动触发、筛选不够一屏触发都会变成一直发请求。
-     */
+    /** 失败后不自动重试，等用户点「重试」，否则断网或筛选不满一屏时会不停发请求 */
     fun loadMore() {
         if (loading || end || !loadedOnce || error != null) return
         fetch(reset = false)
     }
 
-    /** 用户点「重试」：清掉错误再加载下一页 */
     fun retry() {
         error = null
         loadMore()
@@ -149,12 +142,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var loggedIn by mutableStateOf(repo.isLoggedIn)
         private set
 
-    /** 队列存在本地 prefs，改动后 +1 触发界面刷新 */
+    /** 队列存在 prefs 里，改动后 +1 触发界面刷新 */
     var queueVersion by mutableStateOf(0)
         private set
     fun bumpQueue() { queueVersion++ }
 
-    /** 显示大小（5 档，只缩放内容区） */
+    /** 5 档，只缩放内容区 */
     var sizeLevel by mutableStateOf(app.local.sizeLevel)
         private set
     val uiScale: Float get() = com.ryan.xyzcar.data.SIZE_SCALES[sizeLevel]
@@ -164,15 +157,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     fun updateTheme(m: com.ryan.xyzcar.ui.theme.ThemeMode) { themeMode = m; app.local.themeMode = m.key }
 
-    /** 应用内更新状态（「我的」里的检查更新行） */
     var update by mutableStateOf<UpdateState>(UpdateState.Idle)
         private set
     private var updateJob: Job? = null
 
-    /**
-     * silent = 自动检查（启动、回到前台时）：成功后 24 小时内不再查，失败后隔 1 小时再试，演示模式不查；
-     * 同一版本只提示一次，用户跳过的版本不提示。手动检查不受这些限制
-     */
+    /** silent = 启动或回到前台时的自动检查 */
     fun checkUpdate(silent: Boolean) {
         if (updateJob?.isActive == true) return
         val now = System.currentTimeMillis()
@@ -183,7 +172,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             r.onSuccess { rel ->
                 app.local.lastUpdateCheck = System.currentTimeMillis()
                 val newer = Updater.isNewer(rel.version, BuildConfig.VERSION_NAME)
-                // 已经在下载 / 下载好了：自动检查不打断
                 val busy = update is UpdateState.Downloading || update is UpdateState.Ready
                 when {
                     newer && silent && (busy || app.local.skippedUpdate == rel.tag) -> Unit
@@ -203,7 +191,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 跳过这个版本：之后自动检查不再提示它，有更新的版本时照常提示 */
     fun skipUpdate() {
         val rel = (update as? UpdateState.Available)?.release ?: return
         app.local.skippedUpdate = rel.tag
@@ -223,7 +210,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 withContext(Dispatchers.IO) { app.updater.download(rel) { p -> update = UpdateState.Downloading(rel, p) } }
             }.onSuccess { apk ->
-                // 车机不让本应用直接安装时，把安装包放到文件管理看得到的地方，交给文件管理安装
+                // 车机不允许本应用直接安装时，把安装包存到文件管理能看到的位置
                 val canInstall = Updater.canInstall(app)
                 val copies = if (canInstall) emptyList() else withContext(Dispatchers.IO) {
                     PublicFiles.prune(app, "xyzcar-%.apk")
@@ -236,15 +223,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 全屏播放页（盖在内容上，从底部滑出；不进路由栈，返回键先关它） */
+    /** 全屏播放页不进路由栈，返回键先关它 */
     var playerExpanded by mutableStateOf(false)
 
-    /** 全屏播放页显示文字稿（代替封面）；记住上次的选择 */
     var transcriptOn by mutableStateOf(app.local.transcriptOn)
         private set
     fun toggleTranscript() { transcriptOn = !transcriptOn; app.local.transcriptOn = transcriptOn }
 
-    /** 读文字稿：没有、接口报错都变成一句提示，不弹错误 */
     suspend fun loadTranscript(eid: String): com.ryan.xyzcar.ui.components.TranscriptUi = try {
         val lines = repo.transcript(eid)
         if (lines.isEmpty()) com.ryan.xyzcar.ui.components.TranscriptUi.None("这一集没有文字稿")
@@ -255,7 +240,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         com.ryan.xyzcar.ui.components.TranscriptUi.None(if (e is com.ryan.xyzcar.data.api.ApiException) "这一集暂时没有文字稿" else errorText(e))
     }
 
-    /** 「推荐」页的分类面板是否展开（「发现」页的「分类」入口会打开它） */
+    /** 「发现」页的「分类」入口也会打开它 */
     var categoriesOpen by mutableStateOf(false)
 
     val stack = mutableStateListOf<Route>(Route.Home(Tab.Subscriptions))
@@ -264,7 +249,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var navDir by mutableStateOf(NavDir.Forward)
         private set
 
-    /** 每个页面的状态按 route.key 保存：旋转屏幕、返回上一页都不重新加载 */
+    /** 按 route.key 保存，旋转屏幕、返回上一页都不重新加载 */
     private val holders = HashMap<String, Any>()
 
     @Suppress("UNCHECKED_CAST")
@@ -272,7 +257,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dropHolder(key: String) { holders.remove(key) }
 
-    /** 页面关闭时清掉它的状态（holder key 约定为 route.key 或 route.key + ":xxx"） */
+    /** holder key 约定为 route.key 或 route.key + ":xxx" */
     private fun dropRouteHolders(routeKey: String) {
         holders.keys.filter { it == routeKey || it.startsWith("$routeKey:") }.forEach { holders.remove(it) }
     }
@@ -307,10 +292,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    /**
-     * 离开的页面状态等退场动画播完再丢：动画期间旧页面还在重组，
-     * 立即丢弃会让它拿到一个空的新状态、闪一下骨架屏，还会多发一次请求。
-     */
+    /** 等退场动画播完再丢：动画期间旧页面仍在重组，立即丢会闪骨架屏并多发一次请求 */
     private fun dropLater(keys: List<String>) {
         if (keys.isEmpty()) return
         viewModelScope.launch {
@@ -319,28 +301,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ---------- 账号 ----------
-
-    /** 账号列表（「我的」里显示），切换 / 添加 / 退出后刷新 */
     var accounts by mutableStateOf(repo.accounts())
         private set
     val accountId: String? get() = repo.accountId
 
-    /** 添加账号时原来的账号；登录页据此显示「取消」 */
+    /** 非 null 时登录页显示「取消」，可回到原账号 */
     var addingFrom by mutableStateOf<String?>(null)
         private set
 
     private var switching: Job? = null
 
     init {
-        // 迁移来的账号还没有 uid / 昵称：启动时取一次，账号列表能显示名字，过期后重新扫码也能并回原账号
+        // 迁移来的账号缺 uid / 昵称：补取一次，账号列表才有名字，过期重扫也能并回原账号
         if (loggedIn && repo.accounts().any { it.id == repo.accountId && it.uid.isEmpty() }) viewModelScope.launch {
             runCatching { repo.profile() }
             refreshAccounts()
         }
     }
 
-    /** 换账号：旧账号停播并保存 → 切换 → 清掉页面状态 → 载入新账号的续播点和播放列表 */
     private fun changeAccount(id: String?, after: () -> Unit = {}) {
         if (switching?.isActive == true) return
         switching = viewModelScope.launch {
@@ -366,7 +344,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshAccounts() { accounts = repo.accounts() }
 
-    /** 简介里的小宇宙链接 */
     fun openPodcast(pid: String) { playerExpanded = false; push(Route.PodcastDetail(pid)) }
 
     fun openEpisodeById(eid: String) {
@@ -380,11 +357,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun switchAccount(id: String) {
         if (id == repo.accountId) return
         val target = accounts.firstOrNull { it.id == id } ?: return
-        if (!target.loggedIn) { addAccount(); return } // 登录已过期：重新扫码，同一个人会并回原账号
+        if (!target.loggedIn) { addAccount(); return } // 过期账号重新扫码后会并回原账号
         changeAccount(id) { player.messages.value = "已切换到「${target.nickname.ifEmpty { "小宇宙账号" }}」" }
     }
 
-    /** 添加账号：暂时离开当前账号，去扫码；登录页可以取消回来 */
     fun addAccount() {
         if (repo.demo) return
         val from = repo.accountId?.takeIf { repo.isLoggedIn }
@@ -406,7 +382,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun enableDemo() {
-        // debug 包带有真实公开内容的快照时优先用快照（封面、音频都是真的），没有就用合成数据
+        // debug 包有真实内容快照时优先用快照，否则用合成数据
         runCatching {
             app.assets.open("demo_snapshot.json").bufferedReader().use { r ->
                 com.ryan.xyzcar.data.DemoData.install(
@@ -420,10 +396,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         loggedIn = true
     }
 
-    /**
-     * 当前账号登录过期（刷新接口 401，token 已作废）：有其他可用账号就切过去并提示；没有就回登录页。
-     * 过期的账号留在列表里，重新扫码后并回原账号。别的账号过期、或者正在添加账号时不处理
-     */
+    /** 只处理当前账号的 refresh 401；过期账号留在列表里，重新扫码后并回 */
     fun onAuthExpired() {
         if (repo.demo || !loggedIn || repo.isLoggedIn || addingFrom != null || switching?.isActive == true) return
         val expired = accounts.firstOrNull { it.id == repo.accountId }
@@ -433,7 +406,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 退出当前账号：删掉它和它的本地数据；还有别的账号就切过去，否则回登录页 */
     fun logout() {
         if (repo.demo) return
         val id = repo.accountId ?: return
@@ -459,7 +431,7 @@ sealed interface UpdateState {
     data object Latest : UpdateState
     data class Available(val release: Updater.Release) : UpdateState
     data class Downloading(val release: Updater.Release, val progress: Float) : UpdateState
-    /** [copies]：车机不让直接安装时，安装包另存到的位置（给文件管理装） */
+    /** [copies]：车机不允许直接安装时安装包另存的位置，供文件管理安装 */
     data class Ready(val release: Updater.Release, val file: java.io.File, val copies: List<String> = emptyList()) : UpdateState
     data class Failed(val message: String, val release: Updater.Release?) : UpdateState
 }

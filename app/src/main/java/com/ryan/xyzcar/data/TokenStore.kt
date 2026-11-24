@@ -6,40 +6,36 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.util.UUID
 
-/** 登录态存取。抽成接口，方便在 JVM 上（登录验证工具、单元测试）用内存或文件实现。不写日志 */
+/** 抽成接口供 JVM 上的登录验证工具和单元测试替换实现；不写日志 */
 interface AuthTokens {
     var accessToken: String?
     var refreshToken: String?
     var uid: String?
-    /** 固定设备 ID（x-jike-device-id），所有账号共用，退出登录也不变（和官方 App 在同一台手机上换号一样） */
+    /** 所有账号共用，退出登录也不变（同官方 App 在一台手机上换号） */
     val deviceId: String
-    /** 最近一次拿到 token 的时间（毫秒）；0 表示不知道 */
+    /** 毫秒；0 表示未知 */
     val savedAt: Long get() = 0L
     val isLoggedIn: Boolean get() = !accessToken.isNullOrEmpty() && !refreshToken.isNullOrEmpty()
-    /** 当前账号的槽位；单账号实现返回 "" */
     val accountId: String? get() = ""
     fun save(access: String, refresh: String)
-    /** 扫码登录拿到的 token；返回 false 表示没写（当前已有登录中的账号，例如取消添加账号后才返回的扫码结果） */
+    /** 已有登录中的账号时不写、返回 false（如取消添加账号后才返回的扫码结果） */
     fun saveLogin(access: String, refresh: String): Boolean { save(access, refresh); return true }
     fun clear()
-    /** 刷新接口明确 401：只作废 [account] 这一个账号的登录态 */
+    /** 刷新接口明确 401 时只作废 [account] 的登录态 */
     fun expire(account: String?) = clear()
 }
 
-/** 最小键值存储：一次写多个键（值为 null 表示删除），方便换成内存实现做测试 */
+/** 值为 null 表示删除 */
 interface KeyValue {
     fun get(key: String): String?
     fun put(vararg pairs: Pair<String, String?>)
 }
 
-/** 账号列表里显示的信息；[loggedIn] = false 表示登录已过期，点一下重新扫码 */
 data class Account(val id: String, val uid: String, val nickname: String, val avatarUrl: String, val loggedIn: Boolean)
 
 /**
- * 多账号：每个账号一个槽位（a.<id>.access / refresh / saved_at / uid / nick / avatar），accounts 存槽位顺序，active 存当前槽位。
- * - 0.0.5 及以前只有一组 access / refresh，首次打开时原样迁到槽位 [MAIN]，不用重新扫码；设备 ID 不变
- * - 切换账号只改 active，不刷新 token（刷新只在 401 时发生）
- * - 添加账号时先把 active 置空，新登录写进新槽位，不会覆盖当前账号；同一个人（uid 相同）再登录时合并回原槽位
+ * 每个账号一个槽位（a.<id>.字段），accounts 存顺序，active 存当前槽位；切换账号只改 active，不刷新 token。
+ * 0.0.5 及以前的单组 token 首次打开时原样迁到 [MAIN]，不用重新扫码
  */
 open class AccountStore(private val kv: KeyValue) : AuthTokens {
     init { migrate() }
@@ -74,7 +70,6 @@ open class AccountStore(private val kv: KeyValue) : AuthTokens {
     override val deviceId: String
         get() = kv.get("device_id") ?: UUID.randomUUID().toString().uppercase().also { kv.put("device_id" to it) }
 
-    /** 没有当前账号（首次登录、添加账号）时新建一个槽位并设为当前 */
     override fun save(access: String, refresh: String) {
         val id = activeId ?: newId().also { kv.put("accounts" to (ids + it).joinToString(","), "active" to it) }
         kv.put(k(id, "access") to access, k(id, "refresh") to refresh, k(id, "saved_at") to System.currentTimeMillis().toString())
@@ -86,7 +81,6 @@ open class AccountStore(private val kv: KeyValue) : AuthTokens {
         return true
     }
 
-    /** 退出当前账号：删掉它的槽位 */
     override fun clear() { activeId?.let { remove(it) } }
 
     override fun expire(account: String?) {
@@ -98,7 +92,7 @@ open class AccountStore(private val kv: KeyValue) : AuthTokens {
         kv.put(*fields, "accounts" to (ids - id).joinToString(","), "active" to activeId.takeIf { it != id })
     }
 
-    /** null = 暂时没有当前账号（添加账号的登录页） */
+    /** null：添加账号的登录页，暂时没有当前账号 */
     fun activate(id: String?) { kv.put("active" to id?.takeIf { it in ids }) }
 
     fun accounts(): List<Account> = ids.map { id ->
@@ -112,10 +106,7 @@ open class AccountStore(private val kv: KeyValue) : AuthTokens {
         if (id in ids) kv.put(k(id, "uid") to user.uid.ifEmpty { null }, k(id, "nick") to user.nickname, k(id, "avatar") to user.avatarUrl)
     }
 
-    /**
-     * [id] 刚登录、已写入 uid：如果另一个槽位是同一个人，把新 token 和资料并回那个槽位（保留它的播放列表、续播点），
-     * 删掉 [id]，并把那个槽位设为当前。返回最终的槽位
-     */
+    /** 同一个人已有槽位时把新 token 并回旧槽位（保留它的播放列表、续播点）并删掉 [id]；返回最终槽位 */
     fun mergeDuplicate(id: String): String {
         val uid = kv.get(k(id, "uid")).orEmpty()
         if (uid.isEmpty()) return id
@@ -130,7 +121,7 @@ open class AccountStore(private val kv: KeyValue) : AuthTokens {
     private fun newId(): String = if (MAIN !in ids) MAIN else "a" + UUID.randomUUID().toString().replace("-", "").take(8)
 
     companion object {
-        /** 0.0.5 及以前的唯一账号迁移后的槽位；它的本地数据（播放列表、续播点）沿用原来的键，不用搬 */
+        /** 0.0.5 及以前唯一账号迁移后的槽位，本地数据沿用原键名 */
         const val MAIN = "main"
         private val FIELDS = listOf("access", "refresh", "saved_at", "uid", "nick", "avatar")
     }
