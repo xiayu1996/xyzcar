@@ -67,6 +67,40 @@ class UpdaterTest {
         assertEquals("• feat(ui): add update", r.notes)
     }
 
+    /** 第二次检查带上 ETag；服务端回 304 时用上次的内容 */
+    @Test fun latestUsesEtagAnd304() {
+        var calls = 0
+        gitee.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                calls++
+                return if (request.getHeader("If-None-Match") == "\"abc\"") MockResponse().setResponseCode(304)
+                else MockResponse().setHeader("ETag", "\"abc\"").setBody(release)
+            }
+        }
+        serve(github, latest = 503)
+        assertEquals("v0.0.3", updater().latest().tag)
+        assertEquals("v0.0.3", updater().latest().tag)
+        assertEquals(2, calls)
+        assertEquals(null, gitee.takeRequest().getHeader("If-None-Match"))
+        assertEquals("\"abc\"", gitee.takeRequest().getHeader("If-None-Match"))
+    }
+
+    /** 下载新包时清理旧文件，但不删 ETag 缓存 */
+    @Test fun downloadKeepsEtagCache() {
+        gitee.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                "/latest" -> MockResponse().setHeader("ETag", "\"e1\"").setBody(release)
+                "/dl/v0.0.3/xyzcar-0.0.3.apk.sha256" -> MockResponse().setBody("$sha  xyzcar-0.0.3.apk\n")
+                "/dl/v0.0.3/xyzcar-0.0.3.apk" -> MockResponse().setBody(Buffer().write(apk))
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        val u = updater()
+        val r = u.latest()
+        u.download(r) {}
+        assertTrue(File(dir, "meta/gitee.etag").exists())
+    }
+
     @Test fun latestFailsWithBothReasons() {
         serve(gitee, latest = 503)
         serve(github, latest = 404)

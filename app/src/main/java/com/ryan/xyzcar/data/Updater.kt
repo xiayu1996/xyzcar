@@ -28,12 +28,15 @@ class Updater(
         val apkName get() = "xyzcar-$version.apk"
     }
 
+    /** 各个源上次的 ETag 和返回内容：再查时带 If-None-Match，没有新版本时服务端回 304，不用重新下载内容 */
+    private val metaDir = File(dir, "meta")
+
     /** 依次询问各个源，第一个成功的为准；全部失败时抛出合并后的原因 */
     fun latest(): Release {
         val errors = mutableListOf<String>()
         for (s in sources) {
             try {
-                return parseLatest(get(s.latestApi)) ?: throw IOException("返回内容不对")
+                return parseLatest(getLatest(s)) ?: throw IOException("返回内容不对")
             } catch (e: Exception) {
                 errors += "${s.name}：${e.message ?: e.javaClass.simpleName}"
             }
@@ -45,7 +48,7 @@ class Updater(
     fun download(r: Release, onProgress: (Float) -> Unit): File {
         dir.mkdirs()
         val out = File(dir, r.apkName)
-        dir.listFiles()?.filter { it.name != out.name }?.forEach { it.delete() }
+        dir.listFiles()?.filter { it.isFile && it.name != out.name }?.forEach { it.delete() }
         val errors = mutableListOf<String>()
         for (s in sources) {
             try {
@@ -66,6 +69,28 @@ class Updater(
             }
         }
         throw IOException(errors.joinToString("；"))
+    }
+
+    /** 条件请求：有上次的 ETag 和内容才带 If-None-Match；304 就用上次的内容 */
+    private fun getLatest(s: Source): String {
+        val key = s.name.lowercase().filter { it.isLetterOrDigit() }
+        val bodyFile = File(metaDir, "$key.json")
+        val tagFile = File(metaDir, "$key.etag")
+        val etag = if (bodyFile.exists() && tagFile.exists()) runCatching { tagFile.readText() }.getOrNull() else null
+        val req = Request.Builder().url(s.latestApi).header("Accept", "application/json")
+            .apply { if (!etag.isNullOrEmpty()) header("If-None-Match", etag) }.build()
+        http.newCall(req).execute().use { resp ->
+            if (resp.code == 304 && etag != null) return bodyFile.readText()
+            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+            val text = resp.body?.string() ?: throw IOException("空响应")
+            val newTag = resp.header("ETag")
+            runCatching {
+                metaDir.mkdirs()
+                if (newTag.isNullOrEmpty()) { tagFile.delete(); bodyFile.delete() }
+                else { bodyFile.writeText(text); tagFile.writeText(newTag) }
+            }
+            return text
+        }
     }
 
     private fun get(url: String): String =

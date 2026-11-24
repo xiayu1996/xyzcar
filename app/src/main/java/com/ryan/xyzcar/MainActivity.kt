@@ -20,6 +20,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         if (vm.loggedIn) vm.player.onForeground()
+        // 车机上进程常常几天不退出：每次回到前台都静默检查一次（成功后 24 小时内、失败后 1 小时内不重复查）
+        if (vm.loggedIn) vm.checkUpdate(silent = true)
     }
 
     /** Firebase Test Lab 设备上这个系统设置为 "true"：自动进演示模式，避免 Robo 往登录框乱填号码发短信 */

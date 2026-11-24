@@ -169,17 +169,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     private var updateJob: Job? = null
 
-    /** silent = 启动时的自动检查：每天最多一次，演示模式不查，同一版本只提示一次 */
+    /**
+     * silent = 自动检查（启动、回到前台时）：成功后 24 小时内不再查，失败后隔 1 小时再试，演示模式不查；
+     * 同一版本只提示一次，用户跳过的版本不提示。手动检查不受这些限制
+     */
     fun checkUpdate(silent: Boolean) {
         if (updateJob?.isActive == true) return
-        if (silent && (repo.demo || System.currentTimeMillis() - app.local.lastUpdateCheck < 24 * 3600_000L)) return
+        val now = System.currentTimeMillis()
+        if (silent && (repo.demo || now - app.local.lastUpdateCheck < 24 * 3600_000L || now - app.local.lastUpdateFailure < 3600_000L)) return
         if (!silent) update = UpdateState.Checking
         updateJob = viewModelScope.launch {
             val r = runCatching { withContext(Dispatchers.IO) { app.updater.latest() } }
             r.onSuccess { rel ->
                 app.local.lastUpdateCheck = System.currentTimeMillis()
                 val newer = Updater.isNewer(rel.version, BuildConfig.VERSION_NAME)
+                // 已经在下载 / 下载好了：自动检查不打断
+                val busy = update is UpdateState.Downloading || update is UpdateState.Ready
                 when {
+                    newer && silent && (busy || app.local.skippedUpdate == rel.tag) -> Unit
                     newer -> {
                         update = UpdateState.Available(rel)
                         if (silent && app.local.notifiedUpdate != rel.tag) {
@@ -189,8 +196,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     !silent -> update = UpdateState.Latest
                 }
-            }.onFailure { e -> if (!silent) update = UpdateState.Failed("检查失败：${e.message}", null) }
+            }.onFailure { e ->
+                if (silent) app.local.lastUpdateFailure = System.currentTimeMillis()
+                else update = UpdateState.Failed("检查失败：${e.message}", null)
+            }
         }
+    }
+
+    /** 跳过这个版本：之后自动检查不再提示它，有更新的版本时照常提示 */
+    fun skipUpdate() {
+        val rel = (update as? UpdateState.Available)?.release ?: return
+        app.local.skippedUpdate = rel.tag
+        update = UpdateState.Idle
+        player.messages.value = "已跳过 ${rel.tag}，有更新的版本时再提示"
     }
 
     fun downloadUpdate() {

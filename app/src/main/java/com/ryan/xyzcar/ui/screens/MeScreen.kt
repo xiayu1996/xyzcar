@@ -261,6 +261,11 @@ private fun UpdateRow(vm: AppViewModel) {
             modifier = Modifier.padding(start = 46.dp).heightIn(min = Dims.touch),
         ) { Text("也可以试试直接安装", style = MaterialTheme.typography.titleSmall, color = x.accent) }
     }
+    AnimatedVisibility(s is UpdateState.Available, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        TextButton(onClick = vm::skipUpdate, modifier = Modifier.padding(start = 46.dp).heightIn(min = Dims.touch)) {
+            Text("跳过这个版本", style = MaterialTheme.typography.titleSmall, color = x.sub)
+        }
+    }
     val notes = when (s) {
         is UpdateState.Available -> s.release.notes
         is UpdateState.Ready -> s.release.notes

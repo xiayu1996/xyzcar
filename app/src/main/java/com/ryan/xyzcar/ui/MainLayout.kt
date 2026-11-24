@@ -100,7 +100,8 @@ fun MainLayout(vm: AppViewModel) {
     }
 
     BackHandler(enabled = vm.playerExpanded || vm.stack.size > 1) { vm.back() }
-    // 启动后静默检查更新（每天最多一次）
+
+    // 刚登录进来时也查一次（回到前台的检查在 MainActivity.onStart；两处共用同一个节流）
     LaunchedEffect(Unit) { vm.checkUpdate(silent = true) }
 
     val actions = remember {

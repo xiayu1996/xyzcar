@@ -113,6 +113,16 @@ class LocalStore(context: Context, private val account: () -> String? = { Accoun
         get() = prefs.getBoolean("transcript_on", false)
         set(v) = prefs.edit().putBoolean("transcript_on", v).apply()
 
+    /** 上次自动检查更新失败的时间：失败后隔一小时再试，不在每次回到前台时都重试 */
+    var lastUpdateFailure: Long
+        get() = prefs.getLong("last_update_failure", 0L)
+        set(v) = prefs.edit().putLong("last_update_failure", v).apply()
+
+    /** 用户选了「跳过这个版本」的版本号（如 v0.0.7）：自动检查不再提示它，手动检查照常显示 */
+    var skippedUpdate: String
+        get() = prefs.getString("skipped_update", "") ?: ""
+        set(v) = prefs.edit().putString("skipped_update", v).apply()
+
     var lastUpdateCheck: Long
         get() = prefs.getLong("last_update_check", 0L)
         set(v) = prefs.edit().putLong("last_update_check", v).apply()
