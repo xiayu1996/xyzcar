@@ -547,7 +547,7 @@ object XyzParser {
                 "TOP_LIST" -> (data as? JsonArray)?.forEach { t ->
                     val tl = t as? JsonObject ?: return@forEach
                     val eps = tl.arr("items").mapObj { it.obj("item")?.let(::parseListEpisode) }.filterNotNull()
-                    if (eps.isNotEmpty()) sections += DiscoverySection(tl.str("title").ifEmpty { "榜单" }, episodes = eps)
+                    if (eps.isNotEmpty()) sections += DiscoverySection(tl.str("title").ifEmpty { "榜单" }, episodes = eps, topCategory = tl.str("category"))
                 }
                 "NEW_POWER" -> {
                     val pods = o.obj("data").arr("items").mapObj { parsePodcast(it) }

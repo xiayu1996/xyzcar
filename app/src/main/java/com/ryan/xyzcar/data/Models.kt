@@ -68,12 +68,20 @@ data class User(
 /** 分页结果：items + 下一页的游标（原样保存 loadMoreKey 的 JSON） */
 data class Page<T>(val items: List<T>, val loadMoreKey: kotlinx.serialization.json.JsonElement?)
 
-/** 发现页的一个区块 */
+/** 发现页的一个区块；[topCategory] 非空时是榜单（接口的 category） */
 @Serializable
 data class DiscoverySection(
     val title: String,
     val podcasts: List<Podcast> = emptyList(),
     val episodes: List<Episode> = emptyList(),
+    val topCategory: String = "",
+)
+
+/** 三个单集榜单：接口 category → 名称 */
+val TOP_LIST_TITLES = linkedMapOf(
+    "HOT_EPISODES_IN_24_HOURS" to "最热榜",
+    "SKYROCKET_EPISODES" to "锋芒榜",
+    "NEW_STAR_EPISODES" to "新星榜",
 )
 
 /** iconUrl：接口给的分类图标（运行时加载，不打包进 App） */

@@ -1,5 +1,7 @@
 package com.ryan.xyzcar
 
+import androidx.compose.foundation.verticalScroll
+import com.ryan.xyzcar.ui.screens.TopListsBlock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -161,18 +163,37 @@ class UiSnapshots {
         ScreenHeader("发现", null) { SearchPill(Modifier.width(360.dp)) {} }
         androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             item { ColorChip("分类", Chroma(x.accentFill, x.accentBorder, x.accentText)) {} }
-            item { ColorChip("最热榜", x.peach) {} }
-            item { ColorChip("锋芒榜", x.lime) {} }
-            item { ColorChip("新星榜", x.lavender) {} }
-            item { ColorChip("编辑精选", Chroma(x.fill, x.border, x.text)) {} }
+            item { ColorChip("编辑精选", x.peach) {} }
         }
-        SectionTitle("为你推荐", "换一批") {}
-        EpisodePager(eps.take(9), playing.episode?.eid, true, {}, {})
+        androidx.compose.foundation.layout.Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+            SectionTitle("为你推荐", "换一批") {}
+            EpisodePager(eps.take(9), playing.episode?.eid, {}, {})
+            val tops = com.ryan.xyzcar.data.TOP_LIST_TITLES.map { (cat, title) ->
+                com.ryan.xyzcar.data.DiscoverySection(title, episodes = DemoData.topLists[cat].orEmpty().ifEmpty { eps }.take(15), topCategory = cat)
+            }
+            TopListsBlock(tops, 0, {}, playing.episode?.eid, {}, {}) {}
+        }
     }
 
     @Test fun discoverLight() {
         paparazzi.unsafeUpdateConfig(config(night = false))
         shot { XyzCarTheme(ThemeMode.Light) { Landscape(Tab.Discover) { Discover() } } }
+    }
+
+    /** 榜单区：三个榜在标题处切换，每个榜 15 集横向分页 */
+    @Test fun discoverTopLists() {
+        paparazzi.unsafeUpdateConfig(config(night = false))
+        shot {
+            XyzCarTheme(ThemeMode.Light) {
+                Landscape(Tab.Discover) {
+                    val tops = com.ryan.xyzcar.data.TOP_LIST_TITLES.map { (cat, title) ->
+                        com.ryan.xyzcar.data.DiscoverySection(title, episodes = DemoData.topLists[cat].orEmpty().ifEmpty { eps }.take(15), topCategory = cat)
+                    }
+                    TopListsBlock(tops, 0, {}, playing.episode?.eid, {}, {}) {}
+                    SectionTitle("编辑精选", "全部") {}
+                }
+            }
+        }
     }
 
     @Test fun discoverDark() {

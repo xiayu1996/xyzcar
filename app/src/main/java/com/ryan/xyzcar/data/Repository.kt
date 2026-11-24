@@ -1,6 +1,10 @@
 package com.ryan.xyzcar.data
 
 import com.ryan.xyzcar.data.api.XyzApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.ListSerializer
@@ -231,18 +235,49 @@ class Repository(
 
     // ---------- 发现 ----------
 
-    suspend fun discovery(force: Boolean): List<DiscoverySection> = if (demo) DemoData.sections else cached("discovery", force) {
-        val all = mutableListOf<DiscoverySection>()
-        var key: String? = null
-        // 发现流按区块 token 分段返回，最多拉 4 段
-        repeat(4) {
-            val (sections, next) = api.discovery(key)
-            all += sections
-            if (next == null || next == key) return@cached all.distinctBy { it.title }
-            key = next
+    suspend fun discovery(force: Boolean): List<DiscoverySection> =
+        if (demo) withFullLists(DemoData.sections, { DemoData.topLists[it].orEmpty() }, { DemoData.editorPicks })
+        else cached("discovery", force) {
+            val all = mutableListOf<DiscoverySection>()
+            var key: String? = null
+            // 发现流按区块 token 分段返回，最多拉 4 段
+            for (i in 0 until 4) {
+                val (sections, next) = api.discovery(key)
+                all += sections
+                if (next == null || next == key) break
+                key = next
+            }
+            withFullLists(all.distinctBy { it.title }, { topList(it, force).episodes }, { editorPicksFirst(force) })
         }
-        all.distinctBy { it.title }
+
+    /**
+     * 发现流里每个榜单、编辑精选都只给 3 集（2026-11 实测），完整接口各有 15 集：并行换成完整列表。
+     * 哪个取不到就保留发现流里的 3 集，不影响整页
+     */
+    private suspend fun withFullLists(
+        sections: List<DiscoverySection>,
+        top: suspend (String) -> List<Episode>,
+        picks: suspend () -> List<Episode>,
+    ): List<DiscoverySection> = coroutineScope {
+        sections.map { s ->
+            val cat = s.topCategory.ifEmpty { TOP_LIST_TITLES.entries.firstOrNull { it.value == s.title }?.key.orEmpty() }
+            async {
+                val full = try {
+                    when {
+                        cat.isNotEmpty() -> top(cat)
+                        s.title == "编辑精选" -> picks()
+                        else -> null
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    null
+                }
+                s.copy(topCategory = cat, episodes = full?.takeIf { it.size > s.episodes.size } ?: s.episodes)
+            }
+        }.awaitAll()
     }
+
+    private suspend fun editorPicksFirst(force: Boolean): List<Episode> = cached("picks:first", force) { api.editorPicks(null).items }
 
     suspend fun topList(category: String, force: Boolean = false): TopList =
         if (demo) TopList("榜单", category, DemoData.topLists[category] ?: DemoData.episodes, emptyList()) else cached("top:$category", force) { api.topList(category) }

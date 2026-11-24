@@ -42,6 +42,9 @@ class ParsingTest {
         assertEquals(listOf("e4"), sections[2].episodes.map { it.eid })
         assertEquals(listOf("e1", "e2"), sections[0].episodes.map { it.eid })
         assertEquals(listOf("e3"), sections[1].episodes.map { it.eid })
+        // 榜单带上 category，发现页据此换成完整榜单
+        assertEquals("HOT_EPISODES_IN_24_HOURS", sections[2].topCategory)
+        assertEquals("", sections[0].topCategory)
     }
 
     /** 列表里的单集不带 shownotes、简介截短；单集详情保留完整内容 */

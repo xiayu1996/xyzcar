@@ -1,5 +1,13 @@
 package com.ryan.xyzcar.ui.screens
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
+import com.ryan.xyzcar.data.DiscoverySection
+import com.ryan.xyzcar.ui.components.loadPhase
+import com.ryan.xyzcar.ui.components.Swap
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -72,17 +80,12 @@ import com.ryan.xyzcar.ui.theme.Dims
 import com.ryan.xyzcar.ui.theme.Xyz
 import kotlinx.coroutines.launch
 
-/** 榜单入口：category 是接口参数 */
-val TOP_LISTS = listOf(
-    "HOT_EPISODES_IN_24_HOURS" to "最热榜",
-    "SKYROCKET_EPISODES" to "锋芒榜",
-    "NEW_STAR_EPISODES" to "新星榜",
-)
-
-/** 「为你推荐」换一批的结果（只在点按钮时请求） */
+/** 「为你推荐」每次「换一批」拿到的 3 集，按先后排在前面（只在点按钮时请求） */
 private class DiscoverExtra {
-    var refreshed by mutableStateOf<List<Episode>?>(null)
+    var refreshed by mutableStateOf<List<Episode>>(emptyList())
     var refreshing by mutableStateOf(false)
+    /** 榜单区当前选中的是第几个榜 */
+    var topTab by mutableStateOf(0)
 }
 
 /** 搜索入口（灰色圆角条，点了切到「搜索」） */
@@ -104,18 +107,20 @@ fun SearchPill(modifier: Modifier = Modifier, onClick: () -> Unit) {
     }
 }
 
-/** 发现页：搜索条 + 入口色块 + 「为你推荐」横向分页 + 其他区块 */
+/**
+ * 发现页：搜索条 + 入口色块 + 各区块。单集区块都是横向分页（每列 3 集，左右滑看更多）：
+ * 三个榜单合成一块，标题处切换；榜单和编辑精选显示完整的 15 集
+ */
 @Composable
 fun DiscoverScreen(vm: AppViewModel) {
     val h = vm.loadHolder("tab:Discover:data") { force -> vm.repo.discovery(force) }
     val extra = vm.holder("tab:Discover:extra") { DiscoverExtra() }
     LaunchedEffect(Unit) { h.ensureLoaded() }
-    val ps by vm.player.state.collectAsState()
+    val playingEid by vm.player.playingEid.collectAsState()
     val actions = EpisodeActions(vm)
     val x = Xyz
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val wide = maxWidth >= Dims.wide
         val narrow = maxWidth < Dims.narrow
         Column(Modifier.fillMaxSize()) {
         ScreenHeader("发现", onBack = null) {
@@ -126,48 +131,59 @@ fun DiscoverScreen(vm: AppViewModel) {
             item("entries") {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     item { ColorChip("分类", Chroma(x.accentFill, x.accentBorder, x.accentText), Icons.Filled.GridView) { vm.categoriesOpen = true; vm.selectTab(Tab.Recommend) } }
-                    item { ColorChip("最热榜", x.peach) { vm.push(Route.TopListRoute(TOP_LISTS[0].first, TOP_LISTS[0].second)) } }
-                    item { ColorChip("锋芒榜", x.lime) { vm.push(Route.TopListRoute(TOP_LISTS[1].first, TOP_LISTS[1].second)) } }
-                    item { ColorChip("新星榜", x.lavender) { vm.push(Route.TopListRoute(TOP_LISTS[2].first, TOP_LISTS[2].second)) } }
-                    item { ColorChip("编辑精选", Chroma(x.fill, x.border, x.text)) { vm.push(Route.EditorPicks) } }
-                    // 「新节目广场」接口 2026-11 起总返回空列表，入口隐藏
+                    item { ColorChip("编辑精选", x.peach) { vm.push(Route.EditorPicks) } }
+                    // 三个榜单在下面的榜单区切换；「新节目广场」接口 2026-11 起总返回空列表，入口隐藏
                 }
             }
             val sections = h.data
-            when {
-                sections == null && h.loading -> item { SkeletonRows() }
-                sections == null && h.error != null -> item { ErrorBox(h.error!!) { h.load(true) } }
-                sections != null && sections.isEmpty() -> item { EmptyBox("暂时没有推荐内容") }
+            val phase = loadPhase(sections == null && h.loading, sections == null && h.error != null, sections != null && sections.isEmpty())
+            if (phase < 3) item("state") {
+                Swap(phase, Modifier.animateItem()) { p ->
+                    when (p) {
+                        0 -> SkeletonRows()
+                        1 -> ErrorBox(h.error.orEmpty()) { h.load(true) }
+                        else -> EmptyBox("暂时没有推荐内容")
+                    }
+                }
             }
+            val tops = sections.orEmpty().filter { it.topCategory.isNotEmpty() && it.episodes.isNotEmpty() }
+            var topsShown = false
             sections?.forEachIndexed { i, sec ->
+                if (sec.topCategory.isNotEmpty()) {
+                    if (!topsShown && tops.isNotEmpty()) {
+                        topsShown = true
+                        item("tops") {
+                            TopListsBlock(modifier = Modifier.animateItem(), tops = tops, selected = extra.topTab, onSelect = { extra.topTab = it }, playingEid = playingEid, onOpen = actions::open, onPlay = actions::play) { t ->
+                                vm.push(Route.TopListRoute(t.topCategory, t.title))
+                            }
+                        }
+                    }
+                    return@forEachIndexed
+                }
                 val isRecommend = i == 0 && sec.episodes.isNotEmpty()
-                item("sec-$i-title") {
-                    if (isRecommend) {
-                        SectionTitle(sec.title, if (extra.refreshing) "加载中…" else "换一批") {
+                item("sec-$i-title") { Box(Modifier.animateItem()) {
+                    when {
+                        isRecommend -> SectionTitle(sec.title, if (extra.refreshing) "加载中…" else "换一批") {
                             if (extra.refreshing) return@SectionTitle
                             extra.refreshing = true
                             vm.viewModelScope.launch {
                                 runCatching { vm.repo.refreshRecommend() }
-                                    .onSuccess { if (it.isNotEmpty()) extra.refreshed = it }
+                                    .onSuccess { if (it.isNotEmpty()) extra.refreshed = (it + extra.refreshed).distinctBy { e -> e.eid }.take(MAX_EXTRA) }
                                     .onFailure { vm.player.messages.value = errorText(it) }
                                 extra.refreshing = false
                             }
                         }
-                    } else SectionTitle(sec.title)
-                }
+                        sec.title == "编辑精选" -> SectionTitle(sec.title, "全部") { vm.push(Route.EditorPicks) }
+                        else -> SectionTitle(sec.title)
+                    }
+                } }
                 if (sec.podcasts.isNotEmpty()) item("sec-$i-pods") { PodcastCards(sec.podcasts) { vm.push(Route.PodcastDetail(it.pid)) } }
-                val eps = if (isRecommend) extra.refreshed ?: sec.episodes else sec.episodes
+                val eps = if (isRecommend) (extra.refreshed + sec.episodes).distinctBy { it.eid } else sec.episodes
                 if (eps.isNotEmpty()) {
-                    if (wide) {
-                        item("sec-$i-pager") {
-                            AnimatedContent(eps, transitionSpec = { fadeIn(tween(350)) togetherWith fadeOut(tween(200)) }, label = "recPager") { list ->
-                                EpisodePager(list, ps.episode?.eid, ps.isPlaying, actions::open, actions::play)
-                            }
-                        }
-                    } else {
-                        items(eps.take(6), key = { "sec-$i-${it.eid}" }) { ep ->
-                            EpisodeRow(ep, onOpen = { actions.open(ep) }, onPlay = { actions.play(ep) }, onEnqueue = { actions.enqueue(ep) },
-                                playing = ps.isPlaying && ps.episode?.eid == ep.eid, modifier = Modifier.animateItem())
+                    item("sec-$i-pager") {
+                        // 「换一批」后新的一批排在最前，分页回到第一列
+                        AnimatedContent(eps, Modifier.animateItem(), contentKey = { it.firstOrNull()?.eid }, transitionSpec = { fadeIn(tween(350)) togetherWith fadeOut(tween(200)) }, label = "recPager") { list ->
+                            EpisodePager(list, playingEid, actions::open, actions::play)
                         }
                     }
                 }
@@ -177,12 +193,75 @@ fun DiscoverScreen(vm: AppViewModel) {
     }
 }
 
+/** 「换一批」最多攒多少集（每批 3 集） */
+private const val MAX_EXTRA = 27
+
+/**
+ * 榜单区（官方样式）：标题行是三个榜名，点哪个切哪个（左右滑入），右侧「完整榜单」；下面是这个榜的 15 集分页
+ */
+@Composable
+internal fun TopListsBlock(
+    tops: List<DiscoverySection>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    playingEid: String?,
+    onOpen: (Episode) -> Unit,
+    onPlay: (Episode) -> Unit,
+    modifier: Modifier = Modifier,
+    onOpenFull: (DiscoverySection) -> Unit,
+) {
+    val x = Xyz
+    val sel = selected.coerceIn(0, tops.lastIndex)
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 6.dp)) {
+            tops.forEachIndexed { i, t ->
+                val on = i == sel
+                val color by animateColorAsState(if (on) x.accent else x.sub.copy(alpha = 0.55f), tween(250), label = "topTabColor")
+                val scale by animateFloatAsState(if (on) 1f else 0.86f, tween(250), label = "topTabScale")
+                Box(
+                    contentAlignment = Alignment.CenterStart,
+                    modifier = Modifier
+                        .heightIn(min = Dims.touch)
+                        .clip(RoundedCornerShape(14.dp))
+                        .pressable(!on, pressedScale = 0.94f) { onSelect(i) }
+                        .padding(horizontal = 10.dp),
+                ) {
+                    Text(
+                        t.title, style = MaterialTheme.typography.titleLarge, color = color,
+                        modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale },
+                    )
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            val cur = tops[sel]
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.heightIn(min = Dims.touch).clip(RoundedCornerShape(50))
+                    .pressable { onOpenFull(cur) }.padding(horizontal = 20.dp),
+            ) { Text("完整榜单", style = MaterialTheme.typography.labelLarge, color = x.sub) }
+        }
+        AnimatedContent(
+            sel,
+            transitionSpec = {
+                val dir = if (targetState > initialState) 1 else -1
+                (slideInHorizontally(tween(340, easing = FastOutSlowInEasing)) { dir * it / 5 } + fadeIn(tween(300))) togetherWith
+                    (slideOutHorizontally(tween(340, easing = FastOutSlowInEasing)) { -dir * it / 5 } + fadeOut(tween(180)))
+            },
+            label = "topTab",
+        ) { i ->
+            // 刷新后榜单变少时，退场中的旧页可能拿到越界的序号
+            tops.getOrNull(i)?.let { EpisodePager(it.episodes, playingEid, onOpen, onPlay, ranked = true) }
+        }
+    }
+}
+
 /**
  * 横向分页：每列 3 集，一屏放整数列（宽屏 2 列、窄屏 1 列），滑动吸附到整列，下方圆点表示位置。
  * 不再露出下一列的半截：播放键在行首，露出的那截只剩一排播放键，看着像每集有两个播放键。
+ * [ranked]：榜单，行首加名次
  */
 @Composable
-fun EpisodePager(eps: List<Episode>, playingEid: String?, isPlaying: Boolean, onOpen: (Episode) -> Unit, onPlay: (Episode) -> Unit) {
+fun EpisodePager(eps: List<Episode>, playingEid: String?, onOpen: (Episode) -> Unit, onPlay: (Episode) -> Unit, ranked: Boolean = false) {
     val cols = eps.chunked(3)
     val state = rememberLazyListState()
     val gap = 28.dp
@@ -191,10 +270,19 @@ fun EpisodePager(eps: List<Episode>, playingEid: String?, isPlaying: Boolean, on
         val colWidth = (maxWidth - gap * (perScreen - 1)) / perScreen
         Column {
             LazyRow(state = state, flingBehavior = rememberSnapFlingBehavior(state), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                items(cols) { col ->
+                items(cols.size) { c ->
                     Column(Modifier.width(colWidth)) {
-                        col.forEach { ep ->
-                            EpisodeRow(ep, onOpen = { onOpen(ep) }, onPlay = { onPlay(ep) }, playing = isPlaying && playingEid == ep.eid)
+                        cols[c].forEachIndexed { r, ep ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (ranked) {
+                                    val n = c * 3 + r + 1
+                                    Text(
+                                        "$n", style = MaterialTheme.typography.titleLarge, color = if (n <= 3) Xyz.accent else Xyz.sub,
+                                        modifier = Modifier.width(44.dp),
+                                    )
+                                }
+                                EpisodeRow(ep, onOpen = { onOpen(ep) }, onPlay = { onPlay(ep) }, playing = playingEid == ep.eid, modifier = Modifier.weight(1f))
+                            }
                         }
                     }
                 }
@@ -237,16 +325,16 @@ fun PodcastCards(pods: List<Podcast>, onOpen: (Podcast) -> Unit) {
 private fun EpisodeListScreen(vm: AppViewModel, title: String, onBack: (() -> Unit)?, holderKey: String, load: suspend (Boolean) -> List<Episode>) {
     val h = vm.loadHolder(holderKey, load)
     LaunchedEffect(holderKey) { h.ensureLoaded() }
-    val ps by vm.player.state.collectAsState()
+    val playingEid by vm.player.playingEid.collectAsState()
     val actions = EpisodeActions(vm)
     ScreenHeader(title, onBack) {
         RoundIconButton(Icons.Filled.Refresh, "刷新", plain = true, enabled = !h.loading) { h.load(true) }
     }
-    val list = h.data
-    when {
-        list == null && h.loading -> SkeletonRows()
-        list == null && h.error != null -> ErrorBox(h.error!!) { h.load(true) }
-        list.isNullOrEmpty() -> EmptyBox("暂时没有内容")
+    val list = h.data.orEmpty()
+    Swap(loadPhase(h.data == null && h.loading, h.data == null && h.error != null, list.isEmpty())) { phase -> when (phase) {
+        0 -> SkeletonRows()
+        1 -> ErrorBox(h.error.orEmpty()) { h.load(true) }
+        2 -> EmptyBox("暂时没有内容")
         else -> LazyColumn(state = h.listState, contentPadding = PaddingValues(bottom = 24.dp), modifier = Modifier.fillMaxSize()) {
             items(list.size, key = { list[it].eid }) { i ->
                 val ep = list[i]
@@ -255,11 +343,11 @@ private fun EpisodeListScreen(vm: AppViewModel, title: String, onBack: (() -> Un
                         "${i + 1}", style = MaterialTheme.typography.titleLarge, color = if (i < 3) Xyz.accent else Xyz.sub,
                         modifier = Modifier.width(56.dp),
                     )
-                    EpisodeRow(ep, onOpen = { actions.open(ep) }, onPlay = { actions.play(ep) }, onEnqueue = { actions.enqueue(ep) }, playing = ps.isPlaying && ps.episode?.eid == ep.eid)
+                    EpisodeRow(ep, onOpen = { actions.open(ep) }, onPlay = { actions.play(ep) }, onEnqueue = { actions.enqueue(ep) }, playing = playingEid == ep.eid)
                 }
             }
         }
-    }
+    } }
 }
 
 @Composable
@@ -270,19 +358,19 @@ fun TopListScreen(vm: AppViewModel, category: String, title: String, onBack: (()
 fun EditorPicksScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     val h = vm.pagedHolder<Episode>("picks:data", { it.eid }) { key -> vm.repo.editorPicks(key) }
     LaunchedEffect(Unit) { h.ensureLoaded() }
-    val ps by vm.player.state.collectAsState()
+    val playingEid by vm.player.playingEid.collectAsState()
     val actions = EpisodeActions(vm)
     ScreenHeader("编辑精选", onBack)
-    when {
-        !h.loadedOnce && h.loading -> SkeletonRows()
-        h.error != null && h.items.isEmpty() -> ErrorBox(h.error!!) { h.refresh() }
-        h.loadedOnce && h.items.isEmpty() -> EmptyBox("暂时没有内容")
+    Swap(loadPhase(!h.loadedOnce && h.loading, h.error != null && h.items.isEmpty(), h.loadedOnce && h.items.isEmpty())) { phase -> when (phase) {
+        0 -> SkeletonRows()
+        1 -> ErrorBox(h.error.orEmpty()) { h.refresh() }
+        2 -> EmptyBox("暂时没有内容")
         else -> AutoLoadList(h.listState, h.loading, h.end, h::loadMore) {
             items(h.items, key = { it.eid }) { ep ->
                 EpisodeRow(ep, onOpen = { actions.open(ep) }, onPlay = { actions.play(ep) }, onEnqueue = { actions.enqueue(ep) },
-                    playing = ps.isPlaying && ps.episode?.eid == ep.eid, modifier = Modifier.animateItem())
+                    playing = playingEid == ep.eid, modifier = Modifier.animateItem())
             }
             if (h.error != null) item { ErrorBox(h.error!!) { h.retry() } }
         }
-    }
+    } }
 }
