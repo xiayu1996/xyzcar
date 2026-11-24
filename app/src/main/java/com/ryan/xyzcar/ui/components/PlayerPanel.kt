@@ -162,8 +162,8 @@ fun MiniPlayer(state: PlayerUi, queueSize: Int, a: PlayerActions, modifier: Modi
                 PlayFab(state.isPlaying, state.buffering, ep != null, 60.dp, accent, MaterialTheme.colorScheme.onPrimary, a.toggle)
                 if (wide) SkipButton(true, x.text, 44.dp, ep != null, a.forward)
                 Spacer(Modifier.width(if (wide) 14.dp else 10.dp))
-                AnimatedContent(ep?.eid, transitionSpec = { (fadeIn(tween(300)) + scaleIn(initialScale = 0.9f)) togetherWith fadeOut(tween(200)) }, label = "miniCover") { _ ->
-                    Cover(ep?.coverUrl.orEmpty(), 60.dp, title = ep?.podcastTitle.orEmpty(), color = ep?.color, radius = 10.dp)
+                AnimatedContent(ep, contentKey = { it?.eid }, transitionSpec = { (fadeIn(tween(300)) + scaleIn(initialScale = 0.9f)) togetherWith fadeOut(tween(200)) }, label = "miniCover") { e ->
+                    Cover(e?.coverUrl.orEmpty(), 60.dp, title = e?.podcastTitle.orEmpty(), color = e?.color, radius = 10.dp)
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
@@ -315,9 +315,9 @@ fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifi
         Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 16.dp)) {
             WhiteIcon(Icons.Filled.KeyboardArrowDown, "收起播放页", 72.dp, onClick = a.collapse)
             val cover = @Composable {
-                AnimatedContent(ep?.eid, transitionSpec = { (fadeIn(tween(400)) + scaleIn(initialScale = 0.92f)) togetherWith fadeOut(tween(250)) }, label = "bigCover") { _ ->
-                    Box(Modifier.pressable(ep != null, pressedScale = 0.98f) { a.openEpisode() }) {
-                        Cover(ep?.coverUrl.orEmpty(), coverSize, title = ep?.podcastTitle.orEmpty(), color = ep?.color, radius = if (bigCover) 20.dp else 14.dp)
+                AnimatedContent(ep, contentKey = { it?.eid }, transitionSpec = { (fadeIn(tween(400)) + scaleIn(initialScale = 0.92f)) togetherWith fadeOut(tween(250)) }, label = "bigCover") { e ->
+                    Box(Modifier.pressable(e != null, pressedScale = 0.98f) { a.openEpisode() }) {
+                        Cover(e?.coverUrl.orEmpty(), coverSize, title = e?.podcastTitle.orEmpty(), color = e?.color, radius = if (bigCover) 20.dp else 14.dp)
                     }
                 }
             }
