@@ -1,5 +1,7 @@
 package com.ryan.xyzcar.ui.screens
 
+import com.ryan.xyzcar.ui.components.loadPhase
+import com.ryan.xyzcar.ui.components.Swap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -127,10 +129,10 @@ fun SubscriptionsScreen(vm: AppViewModel) {
     LaunchedEffect(st.todoOnly, shown.size, h.loading, h.end) {
         if (st.todoOnly && h.loadedOnce && shown.size < 8 && !h.end && !h.loading && h.error == null && h.items.size < 100) h.loadMore()
     }
-    when {
-        !h.loadedOnce && h.loading -> SkeletonRows()
-        h.error != null && h.items.isEmpty() -> ErrorBox(h.error!!) { h.refresh() }
-        h.loadedOnce && h.items.isEmpty() -> EmptyBox("订阅的节目还没有更新，去「推荐」看看")
+    Swap(loadPhase(!h.loadedOnce && h.loading, h.error != null && h.items.isEmpty(), h.loadedOnce && h.items.isEmpty())) { phase -> when (phase) {
+        0 -> SkeletonRows()
+        1 -> ErrorBox(h.error.orEmpty()) { h.refresh() }
+        2 -> EmptyBox("订阅的节目还没有更新，去「推荐」看看")
         else -> AutoLoadGrid(h, grid, 560.dp) {
             if (shown.isEmpty() && h.end) item(span = { GridItemSpan(maxLineSpan) }) { EmptyBox("都听完了，切到「全部」看看") }
             items(shown, key = { it.eid }) { ep ->
@@ -140,7 +142,7 @@ fun SubscriptionsScreen(vm: AppViewModel) {
                 )
             }
         }
-    }
+    } }
 }
 
 /** 我的订阅：节目封面网格，按最新单集时间排序（和官方一致） */
@@ -172,10 +174,10 @@ fun SubsShowsScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     AnimatedVisibility(st.offline) {
         Text("网络不可用，显示的是上次缓存的订阅", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))
     }
-    when {
-        !h.loadedOnce && h.loading -> SkeletonRows()
-        h.error != null && h.items.isEmpty() -> ErrorBox(h.error!!) { h.refresh() }
-        h.loadedOnce && h.items.isEmpty() -> EmptyBox("还没有订阅节目，去「推荐」看看")
+    Swap(loadPhase(!h.loadedOnce && h.loading, h.error != null && h.items.isEmpty(), h.loadedOnce && h.items.isEmpty())) { phase -> when (phase) {
+        0 -> SkeletonRows()
+        1 -> ErrorBox(h.error.orEmpty()) { h.refresh() }
+        2 -> EmptyBox("还没有订阅节目，去「推荐」看看")
         else -> AutoLoadGrid(h, grid, 180.dp) {
             items(h.items, key = { it.pid }) { p ->
                 Column(
@@ -198,5 +200,5 @@ fun SubsShowsScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
                 }
             }
         }
-    }
+    } }
 }

@@ -1,5 +1,7 @@
 package com.ryan.xyzcar.ui.screens
 
+import com.ryan.xyzcar.ui.components.loadPhase
+import com.ryan.xyzcar.ui.components.Swap
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -266,9 +268,9 @@ private fun CardsBody(
 ) {
     val playingEid by vm.player.playingEid.collectAsState()
     val actions = EpisodeActions(vm)
-    when {
-        loading -> SkeletonRows()
-        error != null -> ErrorBox(error, retry)
+    Swap(loadPhase(loading, error != null, false)) { phase -> when (phase) {
+        0 -> SkeletonRows()
+        1 -> ErrorBox(error.orEmpty(), retry)
         else -> LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 440.dp),
             horizontalArrangement = Arrangement.spacedBy(20.dp),
@@ -283,7 +285,7 @@ private fun CardsBody(
             }
             if (footer != null) item(span = { GridItemSpan(maxLineSpan) }) { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { footer() } }
         }
-    }
+    } }
 }
 
 /**

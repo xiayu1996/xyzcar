@@ -1,5 +1,7 @@
 package com.ryan.xyzcar.ui.screens
 
+import com.ryan.xyzcar.ui.components.loadPhase
+import com.ryan.xyzcar.ui.components.Swap
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -277,13 +279,15 @@ private fun SearchResults(vm: AppViewModel, st: SearchState, result: SearchResul
 
 @Composable
 private fun <T> PagedBody(h: com.ryan.xyzcar.ui.PagedHolder<T>, empty: String, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
-    when {
-        !h.loadedOnce && h.loading -> SkeletonRows()
-        h.error != null && h.items.isEmpty() -> ErrorBox(h.error!!) { h.refresh() }
-        h.loadedOnce && h.items.isEmpty() -> EmptyBox(empty)
-        else -> AutoLoadList(h.listState, h.loading, h.end, h::loadMore) {
-            content()
-            if (h.error != null) item { ErrorBox(h.error!!) { h.retry() } }
+    Swap(loadPhase(!h.loadedOnce && h.loading, h.error != null && h.items.isEmpty(), h.loadedOnce && h.items.isEmpty())) { phase ->
+        when (phase) {
+            0 -> SkeletonRows()
+            1 -> ErrorBox(h.error.orEmpty()) { h.refresh() }
+            2 -> EmptyBox(empty)
+            else -> AutoLoadList(h.listState, h.loading, h.end, h::loadMore) {
+                content()
+                if (h.error != null) item { ErrorBox(h.error!!) { h.retry() } }
+            }
         }
     }
 }

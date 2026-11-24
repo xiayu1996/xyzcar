@@ -12,6 +12,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -358,6 +359,28 @@ fun SectionTitle(text: String, action: String? = null, onAction: (() -> Unit)? =
             }
         }
     }
+}
+
+/**
+ * 加载中 / 出错 / 空 / 内容几种状态之间淡入淡出，不硬切。[phase] 只用来区分状态，内容照常读最新数据
+ */
+@Composable
+fun Swap(phase: Int, modifier: Modifier = Modifier, content: @Composable (Int) -> Unit) {
+    androidx.compose.animation.AnimatedContent(
+        phase, modifier,
+        transitionSpec = {
+            androidx.compose.animation.fadeIn(tween(280)) togetherWith androidx.compose.animation.fadeOut(tween(160))
+        },
+        label = "swap",
+    ) { content(it) }
+}
+
+/** 列表页通用的四种状态：0 加载中 1 出错 2 空 3 有内容 */
+fun loadPhase(loading: Boolean, error: Boolean, empty: Boolean): Int = when {
+    loading -> 0
+    error -> 1
+    empty -> 2
+    else -> 3
 }
 
 // ---------------- 列表行 ----------------
