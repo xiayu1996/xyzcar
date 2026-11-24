@@ -205,7 +205,7 @@ fun SearchScreen(vm: AppViewModel) {
 
 @Composable
 private fun SearchResults(vm: AppViewModel, st: SearchState, result: SearchResult) {
-    val ps by vm.player.state.collectAsState()
+    val playingEid by vm.player.playingEid.collectAsState()
     val actions = EpisodeActions(vm)
     val words = result.highlight.ifEmpty { listOf(st.submitted) }
     Column(Modifier.fillMaxSize()) {
@@ -222,7 +222,7 @@ private fun SearchResults(vm: AppViewModel, st: SearchState, result: SearchResul
                                 item { SectionTitle("单集", "更多") { st.tab = SearchTab.Episodes } }
                                 items(result.episodes, key = { "e-${it.eid}" }) { ep ->
                                     EpisodeRow(ep, onOpen = { actions.open(ep) }, onPlay = { actions.play(ep) }, onEnqueue = { actions.enqueue(ep) },
-                                        playing = ps.isPlaying && ps.episode?.eid == ep.eid, highlightWords = words)
+                                        playing = playingEid == ep.eid, highlightWords = words)
                                 }
                             }
                         }
@@ -243,7 +243,7 @@ private fun SearchResults(vm: AppViewModel, st: SearchState, result: SearchResul
                                 item { SectionTitle("单集", "更多") { st.tab = SearchTab.Episodes } }
                                 items(result.episodes, key = { "e-${it.eid}" }) { ep ->
                                     EpisodeRow(ep, onOpen = { actions.open(ep) }, onPlay = { actions.play(ep) }, onEnqueue = { actions.enqueue(ep) },
-                                        playing = ps.isPlaying && ps.episode?.eid == ep.eid, highlightWords = words)
+                                        playing = playingEid == ep.eid, highlightWords = words)
                                 }
                             }
                         }
@@ -266,7 +266,7 @@ private fun SearchResults(vm: AppViewModel, st: SearchState, result: SearchResul
                     PagedBody(h, "没有找到相关单集") {
                         items(h.items, key = { it.eid }) { ep ->
                             EpisodeRow(ep, onOpen = { actions.open(ep) }, onPlay = { actions.play(ep) }, onEnqueue = { actions.enqueue(ep) },
-                                playing = ps.isPlaying && ps.episode?.eid == ep.eid, highlightWords = words)
+                                playing = playingEid == ep.eid, highlightWords = words)
                         }
                     }
                 }
@@ -294,7 +294,7 @@ private fun <T> PagedBody(h: com.ryan.xyzcar.ui.PagedHolder<T>, empty: String, c
 fun HistoryScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     val h = vm.pagedHolder<Episode>("history:list", { it.eid }) { key -> vm.repo.history(key) }
     LaunchedEffect(Unit) { h.ensureLoaded() }
-    val ps by vm.player.state.collectAsState()
+    val playingEid by vm.player.playingEid.collectAsState()
     val actions = EpisodeActions(vm)
     ScreenHeader("收听历史", onBack) {
         RoundIconButton(Icons.Filled.Refresh, "刷新", plain = true, enabled = !h.loading) { h.refresh() }
@@ -302,7 +302,7 @@ fun HistoryScreen(vm: AppViewModel, onBack: (() -> Unit)?) {
     PagedBody(h, "还没有收听记录") {
         items(h.items, key = { it.eid }) { ep ->
             EpisodeRow(ep, onOpen = { actions.open(ep) }, onPlay = { actions.play(ep) }, onEnqueue = { actions.enqueue(ep) },
-                playing = ps.isPlaying && ps.episode?.eid == ep.eid, modifier = Modifier.animateItem())
+                playing = playingEid == ep.eid, modifier = Modifier.animateItem())
         }
     }
 }

@@ -264,7 +264,7 @@ private fun CardsBody(
     header: (@Composable () -> Unit)? = null,
     footer: (@Composable () -> Unit)? = null,
 ) {
-    val ps by vm.player.state.collectAsState()
+    val playingEid by vm.player.playingEid.collectAsState()
     val actions = EpisodeActions(vm)
     when {
         loading -> SkeletonRows()
@@ -279,7 +279,7 @@ private fun CardsBody(
             if (header != null) item(span = { GridItemSpan(maxLineSpan) }) { header() }
             if (list.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { EmptyBox("暂时没有推荐内容") }
             items(list, key = { it.eid }) { ep ->
-                RecommendCard(ep, ps.isPlaying && ps.episode?.eid == ep.eid, { actions.open(ep) }, { actions.play(ep) }, Modifier.animateItem())
+                RecommendCard(ep, playingEid == ep.eid, { actions.open(ep) }, { actions.play(ep) }, Modifier.animateItem())
             }
             if (footer != null) item(span = { GridItemSpan(maxLineSpan) }) { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { footer() } }
         }

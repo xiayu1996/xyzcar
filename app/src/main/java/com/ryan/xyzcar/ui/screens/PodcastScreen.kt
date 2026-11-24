@@ -47,7 +47,7 @@ fun PodcastScreen(vm: AppViewModel, pid: String, onBack: (() -> Unit)?) {
     val info = vm.loadHolder("pod:$pid:info") { force -> vm.repo.podcast(pid, force) }
     val eps = vm.pagedHolder<Episode>("pod:$pid:eps", { it.eid }) { key -> vm.repo.episodes(pid, key) }
     LaunchedEffect(pid) { info.ensureLoaded(); eps.ensureLoaded() }
-    val ps by vm.player.state.collectAsState()
+    val currentEid by vm.player.currentEid.collectAsState()
     val actions = EpisodeActions(vm)
 
     Accented(info.data?.color) { Column {
@@ -66,7 +66,7 @@ fun PodcastScreen(vm: AppViewModel, pid: String, onBack: (() -> Unit)?) {
             val e = if (ep.podcastTitle.isEmpty()) ep.copy(podcastTitle = info.data?.title.orEmpty(), coverUrl = ep.coverUrl.ifEmpty { info.data?.coverUrl.orEmpty() }, color = ep.color ?: info.data?.color) else ep
             EpisodeRow(
                 e, onOpen = { actions.open(e) }, onPlay = { actions.play(e) },
-                onEnqueue = { actions.enqueue(e) }, showPodcast = false, playing = ps.episode?.eid == e.eid,
+                onEnqueue = { actions.enqueue(e) }, showPodcast = false, playing = currentEid == e.eid,
             )
         }
         if (eps.error != null && eps.items.isNotEmpty()) item { ErrorBox(eps.error!!) { eps.retry() } }

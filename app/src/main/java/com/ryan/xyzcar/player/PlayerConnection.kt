@@ -13,6 +13,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,6 +46,15 @@ class PlayerConnection(private val context: Context) {
         } ?: PlayerUi(speed = app.local.speed),
     )
     val state: StateFlow<PlayerUi> = _state.asStateFlow()
+
+    /**
+     * 列表只关心「哪一集在出声」和「哪一集是当前单集」：单独拿出来，不跟着每 0.5 秒的进度变化，
+     * 播放时列表页就不用一秒重组两次
+     */
+    val playingEid: StateFlow<String?> = _state.map { if (it.isPlaying) it.episode?.eid else null }
+        .distinctUntilChanged().stateIn(scope, SharingStarted.Eagerly, null)
+    val currentEid: StateFlow<String?> = _state.map { it.episode?.eid }
+        .distinctUntilChanged().stateIn(scope, SharingStarted.Eagerly, _state.value.episode?.eid)
 
     /** 定时关闭：到点的时间（elapsedRealtime 毫秒），null 表示没开 */
     val sleepEndsAt = MutableStateFlow<Long?>(null)

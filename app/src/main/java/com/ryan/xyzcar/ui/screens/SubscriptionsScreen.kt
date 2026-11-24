@@ -110,7 +110,7 @@ fun SubscriptionsScreen(vm: AppViewModel) {
         vm.repo.inbox(key, st.force).also { st.force = false }
     }
     LaunchedEffect(Unit) { h.ensureLoaded() }
-    val ps by vm.player.state.collectAsState()
+    val playingEid by vm.player.playingEid.collectAsState()
     val actions = EpisodeActions(vm)
     val grid = remember { LazyGridState() }
 
@@ -136,7 +136,7 @@ fun SubscriptionsScreen(vm: AppViewModel) {
             items(shown, key = { it.eid }) { ep ->
                 EpisodeRow(
                     ep, onOpen = { actions.open(ep) }, onPlay = { actions.play(ep) }, onEnqueue = { actions.enqueue(ep) },
-                    playing = ps.isPlaying && ps.episode?.eid == ep.eid, modifier = Modifier.animateItem(),
+                    playing = playingEid == ep.eid, modifier = Modifier.animateItem(),
                 )
             }
         }
