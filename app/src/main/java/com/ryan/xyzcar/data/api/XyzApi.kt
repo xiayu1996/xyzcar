@@ -11,6 +11,7 @@ import com.ryan.xyzcar.data.AuthTokens
 import com.ryan.xyzcar.data.ThemeColor
 import com.ryan.xyzcar.data.TopList
 import com.ryan.xyzcar.data.User
+import com.ryan.xyzcar.data.lite
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -339,7 +340,7 @@ class XyzApi(
             if (loadMoreKey != null && loadMoreKey !is JsonNull) put("loadMoreKey", loadMoreKey)
         }
         val r = exec(Call("POST", "/v1/episode/list", body))
-        return Page(r.arr("data").mapObj { parseEpisode(it) }, r["loadMoreKey"].nonNull())
+        return Page(r.arr("data").mapObj { parseListEpisode(it) }, r["loadMoreKey"].nonNull())
     }
 
     suspend fun episode(eid: String): Episode =
@@ -379,7 +380,7 @@ class XyzApi(
     suspend fun inbox(loadMoreKey: JsonElement? = null): Page<Episode> {
         val body = buildJsonObject { put("limit", "20"); if (loadMoreKey != null && loadMoreKey !is JsonNull) put("loadMoreKey", loadMoreKey) }
         val r = exec(Call("POST", "/v1/inbox/list", body))
-        return Page(r.arr("data").mapObj { parseEpisode(it) }, r["loadMoreKey"].nonNull())
+        return Page(r.arr("data").mapObj { parseListEpisode(it) }, r["loadMoreKey"].nonNull())
     }
 
     // ---------- 账号 ----------
@@ -392,7 +393,7 @@ class XyzApi(
     suspend fun history(loadMoreKey: JsonElement? = null): Page<Episode> {
         val body = buildJsonObject { if (loadMoreKey != null && loadMoreKey !is JsonNull) put("loadMoreKey", loadMoreKey) }
         val r = exec(Call("POST", "/v1/episode-played/list-history", body, abtest = null))
-        return Page(r.arr("data").mapObj { it.obj("episode")?.let { e -> parseEpisode(e) } }.filterNotNull(), r["loadMoreKey"].nonNull())
+        return Page(r.arr("data").mapObj { it.obj("episode")?.let { e -> parseListEpisode(e) } }.filterNotNull(), r["loadMoreKey"].nonNull())
     }
 
     // ---------- 发现 ----------
@@ -436,7 +437,7 @@ class XyzApi(
         return TopList(
             title = d.str("title"),
             category = category,
-            episodes = d.arr("items").mapObj { it.obj("item")?.let { e -> parseEpisode(e) } }.filterNotNull(),
+            episodes = d.arr("items").mapObj { it.obj("item")?.let { e -> parseListEpisode(e) } }.filterNotNull(),
             podcasts = emptyList(),
         )
     }
@@ -450,13 +451,13 @@ class XyzApi(
                 extraHeaders = mapOf("X-Online-Host" to "api.xiaoyuzhoufm.com"),
             ),
         )
-        val eps = r.arr("data").flatMap { day -> (day as? JsonObject).arr("picks").mapObj { p -> p.obj("episode")?.let { parseEpisode(it) } }.filterNotNull() }
+        val eps = r.arr("data").flatMap { day -> (day as? JsonObject).arr("picks").mapObj { p -> p.obj("episode")?.let { parseListEpisode(it) } }.filterNotNull() }
         return Page(eps, r["loadMoreKey"].nonNull())
     }
 
     suspend fun newEpisodesSquare(): List<Episode> {
         val r = exec(Call("POST", "/v1/pilot-discovery/list", abtest = "{}", acceptLanguage = "zh-Hant-CN;q=1.0, zh-Hans-HK;q=0.9"))
-        return r.arr("data").mapObj { it.obj("episode")?.let { e -> parseEpisode(e) } }.filterNotNull()
+        return r.arr("data").mapObj { it.obj("episode")?.let { e -> parseListEpisode(e) } }.filterNotNull()
     }
 
     suspend fun categories(): List<Category> = XyzParser.parseCategories(exec(Call("POST", "/v1/category/list-all", abtest = null)))
@@ -510,6 +511,7 @@ class XyzApi(
 
     fun parsePodcast(o: JsonObject): Podcast = XyzParser.parsePodcast(o)
     fun parseEpisode(o: JsonObject): Episode = XyzParser.parseEpisode(o)
+    private fun parseListEpisode(o: JsonObject): Episode = XyzParser.parseListEpisode(o)
 
     companion object {
         const val BASE = "https://api.xiaoyuzhoufm.com"
@@ -544,7 +546,7 @@ object XyzParser {
                 "DISCOVERY_HEADER", "CATEGORY_ENTRANCE" -> {} // 顶部入口、分类入口：App 里有单独的分类页
                 "TOP_LIST" -> (data as? JsonArray)?.forEach { t ->
                     val tl = t as? JsonObject ?: return@forEach
-                    val eps = tl.arr("items").mapObj { it.obj("item")?.let(::parseEpisode) }.filterNotNull()
+                    val eps = tl.arr("items").mapObj { it.obj("item")?.let(::parseListEpisode) }.filterNotNull()
                     if (eps.isNotEmpty()) sections += DiscoverySection(tl.str("title").ifEmpty { "榜单" }, episodes = eps)
                 }
                 "NEW_POWER" -> {
@@ -552,7 +554,7 @@ object XyzParser {
                     if (pods.isNotEmpty()) sections += DiscoverySection("新节目", podcasts = pods)
                 }
                 "EDITOR_PICK" -> {
-                    val eps = o.obj("data").arr("picks").mapObj { it.obj("episode")?.let(::parseEpisode) }.filterNotNull()
+                    val eps = o.obj("data").arr("picks").mapObj { it.obj("episode")?.let(::parseListEpisode) }.filterNotNull()
                     if (eps.isNotEmpty()) sections += DiscoverySection("编辑精选", episodes = eps)
                 }
                 // 其他类型：data 是模块数组或单个模块对象，尽量识别，识别不了就跳过
@@ -569,7 +571,7 @@ object XyzParser {
     fun parseModule(m: JsonObject): DiscoverySection? {
         val title = m.str("title").ifEmpty { return null }
         val targets = m.arr("target")
-        val eps = targets.mapObj { t -> t.obj("episode")?.let { parseEpisode(it) } }.filterNotNull()
+        val eps = targets.mapObj { t -> t.obj("episode")?.let { parseListEpisode(it) } }.filterNotNull()
         val pods = targets.mapObj { t -> t.obj("podcast")?.let { parsePodcast(it) } }.filterNotNull()
         if (eps.isEmpty() && pods.isEmpty()) return null
         return DiscoverySection(title, podcasts = pods, episodes = eps)
@@ -583,7 +585,7 @@ object XyzParser {
             val o = item as? JsonObject ?: return@forEach
             when (o.str("type")) {
                 "PODCAST" -> pods += parsePodcast(o)
-                "EPISODE" -> eps += parseEpisode(o)
+                "EPISODE" -> eps += parseListEpisode(o)
             }
         }
         val words = r.obj("highlightWord").arr("words").mapNotNull { (it as? JsonPrimitive)?.content?.takeIf { w -> w.isNotBlank() } }
@@ -601,7 +603,7 @@ object XyzParser {
         r.arr("data").mapObj { item ->
             val e = item.obj("episode") ?: return@mapObj null
             val pod = item.obj("podcast")
-            val ep = parseEpisode(e)
+            val ep = parseListEpisode(e)
             val p = pod?.let { parsePodcast(it) }
             ep.copy(
                 pid = ep.pid.ifEmpty { p?.pid.orEmpty() },
@@ -638,6 +640,9 @@ object XyzParser {
         val c = o.obj("color") ?: return null
         return ThemeColor(c.str("original"), c.str("light"), c.str("dark")).takeIf { it.original.isNotEmpty() }
     }
+
+    /** 列表里的单集：不带 shownotes，简介截短（见 [com.ryan.xyzcar.data.lite]） */
+    fun parseListEpisode(o: JsonObject): Episode = parseEpisode(o).lite()
 
     fun parseEpisode(o: JsonObject): Episode {
         val pod = o.obj("podcast")

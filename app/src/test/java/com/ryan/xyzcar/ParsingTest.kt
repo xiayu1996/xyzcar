@@ -44,6 +44,20 @@ class ParsingTest {
         assertEquals(listOf("e3"), sections[1].episodes.map { it.eid })
     }
 
+    /** 列表里的单集不带 shownotes、简介截短；单集详情保留完整内容 */
+    @Test
+    fun listEpisodesAreLite() {
+        val root = json.parseToJsonElement(res("episode_detail.json")).jsonObject
+        val upstream = root["data"]!!.jsonObject["data"]!!.jsonObject
+        val full = api.parseEpisode(upstream)
+        val lite = api.parseListEpisode(upstream)
+        assertTrue(full.shownotes.isNotEmpty())
+        assertEquals("", lite.shownotes)
+        assertTrue(lite.description.length <= 300)
+        assertEquals(full.description.take(300), lite.description)
+        assertEquals(full.copy(shownotes = "", description = lite.description), lite)
+    }
+
     @Test
     fun parseEpisodeDetail() {
         val root = json.parseToJsonElement(res("episode_detail.json")).jsonObject

@@ -21,20 +21,32 @@ class Repository(
     private val tokens: TokenStore,
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    private val memCache = HashMap<String, Pair<Long, Any>>()
+    /** 最近用过的 [MAX_CACHED] 份列表（按访问顺序淘汰），过期的写入时顺手清掉 */
+    private val memCache = object : LinkedHashMap<String, Pair<Long, Any>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, Any>>?) = size > MAX_CACHED
+    }
     private val progressLock = Mutex()
 
     @Suppress("UNCHECKED_CAST")
     private suspend fun <T : Any> cached(key: String, force: Boolean, load: suspend () -> T): T {
-        val hit = memCache[key]
+        val hit = synchronized(memCache) { memCache[key] }
         if (!force && hit != null && System.currentTimeMillis() - hit.first < CACHE_MS) return hit.second as T
         val v = load()
-        memCache[key] = System.currentTimeMillis() to v
+        val now = System.currentTimeMillis()
+        synchronized(memCache) {
+            memCache.entries.removeAll { now - it.value.first >= CACHE_MS }
+            memCache[key] = now to v
+        }
         return v
     }
 
-    fun invalidate(prefix: String) {
-        memCache.keys.filter { it.startsWith(prefix) }.forEach { memCache.remove(it) }
+    fun invalidate(prefix: String) = synchronized(memCache) {
+        memCache.keys.removeAll { it.startsWith(prefix) }
+    }
+
+    /** 界面退到后台（只在后台播放）时放掉列表缓存；页面自己的状态还在，回来不会白屏 */
+    fun trimMemory() {
+        synchronized(memCache) { memCache.clear() }
     }
 
     /** debug 包的演示模式：返回样例数据，用于界面截图 */
@@ -147,7 +159,8 @@ class Repository(
 
     /** 播放前补齐音频地址（列表接口有时不带 enclosure） */
     suspend fun ensurePlayable(ep: Episode): Episode {
-        if (ep.audioUrl.isNotEmpty() && ep.shownotes.isNotEmpty()) return ep
+        // 列表里的单集不带 shownotes（见 lite()），播放用不到，有音频地址和节目名就直接播，不多等一次请求
+        if (ep.audioUrl.isNotEmpty() && ep.podcastTitle.isNotEmpty()) return ep
         val full = runCatching { episode(ep.eid) }.getOrNull() ?: return ep
         return full.copy(
             podcastTitle = full.podcastTitle.ifEmpty { ep.podcastTitle },
@@ -333,5 +346,7 @@ class Repository(
 
     companion object {
         const val CACHE_MS = 5 * 60 * 1000L
+        /** 内存里最多留多少份列表：够来回切换几个分类、节目，又不会越积越多 */
+        const val MAX_CACHED = 40
     }
 }

@@ -1,6 +1,11 @@
 package com.ryan.xyzcar
 
 import android.app.Application
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import coil.disk.DiskCache
+import coil.imageLoader
+import coil.memory.MemoryCache
 import android.net.ConnectivityManager
 import android.net.Network
 import kotlinx.coroutines.CoroutineScope
@@ -18,7 +23,7 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import com.ryan.xyzcar.data.api.XyzApi
 
-class App : Application() {
+class App : Application(), ImageLoaderFactory {
     lateinit var tokens: TokenStore
     lateinit var local: LocalStore
     lateinit var api: XyzApi
@@ -43,6 +48,23 @@ class App : Application() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching { CarLab.onAppStart(this@App, local, BuildConfigInfo.VERSION) }
                 .onFailure { DebugLog.kv("start", "snapshot_error", "error" to "${it.javaClass.simpleName}:${it.message.orEmpty()}") }
+        }
+    }
+
+    /** 封面图片：内存缓存占应用可用内存的 15%（Coil 默认 20%），磁盘缓存 64 MB；新图淡入，不硬切 */
+    override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
+        .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.15).build() }
+        .diskCache { DiskCache.Builder().directory(cacheDir.resolve("covers")).maxSizeBytes(64L * 1024 * 1024).build() }
+        .crossfade(220)
+        .respectCacheHeaders(false)
+        .build()
+
+    /** 界面看不见了（车机上多半是在后台播放）：放掉图片和列表的内存缓存，回来时从磁盘缓存重新解码 */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_UI_HIDDEN) {
+            imageLoader.memoryCache?.clear()
+            repo.trimMemory()
         }
     }
 

@@ -45,6 +45,15 @@ data class Episode(
     val finished: Boolean = false,
 )
 
+/**
+ * 列表里用的精简单集：去掉 shownotes（HTML，常有几 KB），简介只留开头。
+ * 列表要缓存很多集，完整内容等打开单集详情时再取
+ */
+fun Episode.lite(): Episode = if (shownotes.isEmpty() && description.length <= LITE_DESC) this
+    else copy(shownotes = "", description = description.take(LITE_DESC))
+
+private const val LITE_DESC = 300
+
 /** 未听或在听（没听完）：「订阅」页的筛选和自动续播共用 */
 fun Episode.isTodo(): Boolean = !finished && !(durationSec > 0 && progressSec >= durationSec - 30)
 
