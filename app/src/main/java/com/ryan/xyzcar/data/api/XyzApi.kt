@@ -10,6 +10,7 @@ import com.ryan.xyzcar.data.SearchResult
 import com.ryan.xyzcar.data.AuthTokens
 import com.ryan.xyzcar.data.ThemeColor
 import com.ryan.xyzcar.data.TopList
+import com.ryan.xyzcar.data.TranscriptLine
 import com.ryan.xyzcar.data.User
 import com.ryan.xyzcar.data.lite
 import kotlinx.coroutines.Dispatchers
@@ -78,12 +79,14 @@ class XyzApi(
     private fun localTime(): String =
         OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
 
+    private val userAgent get() = "Xiaoyuzhou/$appVersion (build:$appBuild; iOS $OS_VERSION)"
+
     private fun Request.Builder.iosHeaders(
         abtest: String? = "{\"old_user_discovery_feed\":\"enable\"}",
         acceptLanguage: String = "zh-Hant-HK;q=1.0, zh-Hans-CN;q=0.9",
         withTime: Boolean = true,
     ): Request.Builder {
-        header("User-Agent", "Xiaoyuzhou/$appVersion (build:$appBuild; iOS $OS_VERSION)")
+        header("User-Agent", userAgent)
         header("Market", "AppStore")
         header("App-BuildNo", appBuild)
         header("OS", "ios")
@@ -471,6 +474,22 @@ class XyzApi(
         return XyzParser.parseCategoryEpisodes(exec(Call("POST", "/v1/category/podcast/list-by-tab", body, abtest = null)))
     }
 
+    /**
+     * 单集文字稿：先取带签名的下载地址（有效期很短，不缓存），再从 CDN 下载。
+     * CDN 只认小宇宙 App 的 User-Agent（普通 UA 返回 403），所以只带 UA，不带账号 token 和设备号。没有文字稿返回空列表
+     */
+    suspend fun transcript(eid: String, mediaId: String): List<TranscriptLine> {
+        val body = buildJsonObject { put("eid", eid); put("mediaId", mediaId) }
+        val url = exec(Call("POST", "/v1/episode-transcript/get", body)).obj("data").str("transcriptUrl")
+        if (url.isEmpty()) return emptyList()
+        return withContext(Dispatchers.IO) {
+            mediaHttp.newCall(Request.Builder().url(url).header("User-Agent", userAgent).build()).execute().use { r ->
+                if (!r.isSuccessful) throw ApiException(r.code, "文字稿下载失败（HTTP ${r.code}）")
+                XyzParser.parseTranscript(XyzParser.gunzipIfNeeded(r.body?.bytes() ?: ByteArray(0)).decodeToString())
+            }
+        }
+    }
+
     /** 「为你推荐」换一批：每次返回 3 集新的推荐（只在用户点「换一批」时调用） */
     suspend fun refreshRecommend(): List<Episode> {
         val r = exec(Call("POST", "/v1/discovery-collection/refresh-episode-recommend"))
@@ -613,6 +632,24 @@ object XyzParser {
             )
         }.filter { it.eid.isNotEmpty() }
 
+    /**
+     * 文字稿（2026-11 实测）：JSON 数组，每项 {text, startMs}，CDN 返回的是 gzip 压缩过的字节。
+     * 也兼容外面再包一层对象的写法；空句子跳过，按时间排序
+     */
+    fun parseTranscript(text: String): List<TranscriptLine> {
+        val root = runCatching { Json.parseToJsonElement(text) }.getOrNull() ?: return emptyList()
+        val arr = root as? JsonArray ?: (root as? JsonObject)?.values?.firstOrNull { it is JsonArray } as? JsonArray ?: return emptyList()
+        return arr.mapObj { o ->
+            val t = o.str("text").trim()
+            val start = o.str("startMs").toDoubleOrNull()?.toLong()
+            if (t.isEmpty() || start == null) null else TranscriptLine(start, t)
+        }.sortedBy { it.startMs }
+    }
+
+    /** gzip 魔数 1f 8b 开头就解压，否则原样返回（服务端带不带 Content-Encoding 都能处理） */
+    fun gunzipIfNeeded(b: ByteArray): ByteArray =
+        if (b.size > 2 && b[0] == 0x1f.toByte() && b[1] == 0x8b.toByte()) java.util.zip.GZIPInputStream(b.inputStream()).use { it.readBytes() } else b
+
     fun parseUser(o: JsonObject?): User = User(
         uid = o.str("uid"),
         nickname = o.str("nickname"),
@@ -665,6 +702,7 @@ object XyzParser {
             color = parseColor(pod) ?: parseColor(o),
             paid = o.str("payType").let { it.isNotEmpty() && it != "FREE" },
             finished = o.bool("isFinished"),
+            transcriptMediaId = if (o.str("isTranscriptEnabled") == "false") "" else o.obj("transcript").str("mediaId").ifEmpty { o.str("transcriptMediaId") },
         )
     }
 

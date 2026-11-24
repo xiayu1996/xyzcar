@@ -1,5 +1,6 @@
 package com.ryan.xyzcar.ui
 
+import com.ryan.xyzcar.ui.components.TranscriptUi
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -114,6 +115,7 @@ fun MainLayout(vm: AppViewModel) {
             expand = { vm.playerExpanded = true },
             collapse = { vm.playerExpanded = false },
             cycleSleep = vm.player::cycleSleep,
+            toggleTranscript = vm::toggleTranscript,
         )
     }
     // 旋转、分屏改变宽度时内容区整体搬家，不丢状态、不重放转场。
@@ -163,7 +165,14 @@ fun MainLayout(vm: AppViewModel) {
                 }
             }
             Box(Modifier.fillMaxSize()) {
-                FullPlayer(ps, left, actions)
+                // 文字稿：打开时按当前单集加载，换集重新加载
+                val trEid = ps.episode?.eid
+                val transcript by androidx.compose.runtime.produceState<TranscriptUi?>(null, vm.transcriptOn, trEid) {
+                    if (!vm.transcriptOn || trEid == null) { value = null; return@produceState }
+                    value = TranscriptUi.Loading
+                    value = vm.loadTranscript(trEid)
+                }
+                FullPlayer(ps, left, actions, transcript = transcript)
                 AutoNextBanner(
                     ps, queueSize, vm.player::cancelAutoNext, vm.player::swapAutoNext,
                     // 让开左上角的「收起」按钮（播放页左右边距 32 + 按钮 72）

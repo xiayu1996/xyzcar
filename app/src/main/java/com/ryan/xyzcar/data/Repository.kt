@@ -51,6 +51,7 @@ class Repository(
     /** 界面退到后台（只在后台播放）时放掉列表缓存；页面自己的状态还在，回来不会白屏 */
     fun trimMemory() {
         synchronized(memCache) { memCache.clear() }
+        transcriptCache = null
     }
 
     /** debug 包的演示模式：返回样例数据，用于界面截图 */
@@ -172,6 +173,22 @@ class Repository(
             progressSec = ep.progressSec,
             color = full.color ?: ep.color,
         )
+    }
+
+    // ---------- 文字稿 ----------
+
+    private class CachedTranscript(val eid: String, val lines: List<TranscriptLine>)
+    /** 只留当前这一集的（一集几百句、上百 KB），不进列表缓存 */
+    @Volatile private var transcriptCache: CachedTranscript? = null
+
+    /** 单集文字稿；没有返回空列表。mediaId 从单集详情取（播放器里的单集对象不一定带） */
+    suspend fun transcript(eid: String): List<TranscriptLine> {
+        if (demo) return DemoData.transcript()
+        transcriptCache?.takeIf { it.eid == eid }?.let { return it.lines }
+        val mediaId = episode(eid).transcriptMediaId
+        val lines = if (mediaId.isEmpty()) emptyList() else api.transcript(eid, mediaId)
+        transcriptCache = CachedTranscript(eid, lines)
+        return lines
     }
 
     // ---------- 进度同步 ----------

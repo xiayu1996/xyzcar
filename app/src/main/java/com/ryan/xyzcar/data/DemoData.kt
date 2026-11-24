@@ -26,6 +26,17 @@ object DemoData {
         podcastEpisodes = s.podcastEpisodes
     }
 
+    /** 演示用文字稿：每 12 秒一句，覆盖前 20 分钟 */
+    fun transcript(): List<TranscriptLine> {
+        val s = listOf(
+            "哈喽大家好，欢迎收听新一期的节目。", "今天我们想聊一个大家可能都遇到过的问题。", "先说说我自己最近的一个经历吧。",
+            "那天我开车在路上，突然想到一件事情。", "其实很多时候我们并没有真正想清楚自己要什么。", "对，我觉得这一点特别重要。",
+            "我们先把背景交代一下，方便第一次听的朋友。", "这个话题我们之前也简单聊过一次。", "但是那次没有展开，今天想多说一点。",
+            "好，那我们就从最开始说起。",
+        )
+        return (0 until 100).map { TranscriptLine(it * 12_000L, s[it % s.size]) }
+    }
+
     fun allEpisodes(): List<Episode> =
         (episodes + editorPicks + topLists.values.flatten() + podcastEpisodes.values.flatten() + sections.flatMap { it.episodes }).distinctBy { it.eid }
 

@@ -73,6 +73,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
 import com.ryan.xyzcar.data.ThemeColor
+import com.ryan.xyzcar.data.TranscriptLine
+import androidx.compose.material.icons.automirrored.filled.Subject
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.ui.draw.drawWithContent
 import com.ryan.xyzcar.player.PlayerUi
 import com.ryan.xyzcar.ui.Fmt
 import com.ryan.xyzcar.ui.theme.Dims
@@ -91,7 +95,15 @@ data class PlayerActions(
     val expand: () -> Unit = {},
     val collapse: () -> Unit = {},
     val cycleSleep: () -> Unit = {},
+    val toggleTranscript: () -> Unit = {},
 )
+
+/** 全屏播放页的文字稿：null = 没打开 */
+sealed interface TranscriptUi {
+    data object Loading : TranscriptUi
+    data class None(val message: String) : TranscriptUi
+    data class Ready(val lines: List<TranscriptLine>) : TranscriptUi
+}
 
 private fun speedText(speed: Float) = (if (speed % 1f == 0f) "%.1f".format(speed) else "%.2f".format(speed).trimEnd('0')) + "x"
 
@@ -294,7 +306,7 @@ private fun WhiteIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, des
 
 /** 全屏播放页：横屏左控制右封面（控制靠驾驶位），竖屏 / 分屏上下排列。始终深色底，强调色取自节目封面 */
 @Composable
-fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifier: Modifier = Modifier) {
+fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifier: Modifier = Modifier, transcript: TranscriptUi? = null) {
     val ep = state.episode
     val accent by animateColorAsState(playerAccent(ep?.color), tween(500), label = "playerAccent")
     BoxWithConstraints(
@@ -321,10 +333,20 @@ fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifi
                     }
                 }
             }
+            // 文字稿只在放得下的布局里提供（横屏、或竖排有大封面的位置），和封面互相切换
+            val canTranscript = landscape || bigCover
+            val showTranscript = canTranscript && transcript != null
             if (landscape) {
                 Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(56.dp)) {
-                    PlayerControls(state, sleepMinutesLeft, accent, a, Modifier.weight(1f))
-                    Box(Modifier.padding(end = 16.dp)) { cover() }
+                    PlayerControls(state, sleepMinutesLeft, accent, a, Modifier.weight(1f), transcriptOn = if (canTranscript) showTranscript else null)
+                    AnimatedContent(
+                        showTranscript, Modifier.then(if (showTranscript) Modifier.weight(1.1f) else Modifier).fillMaxHeight(),
+                        transitionSpec = { (fadeIn(tween(350)) + scaleIn(tween(350), initialScale = 0.96f)) togetherWith fadeOut(tween(200)) },
+                        contentAlignment = Alignment.Center, label = "coverOrTranscript",
+                    ) { on ->
+                        if (on && transcript != null) TranscriptPane(transcript, state.positionMs, accent, a.seekTo, Modifier.fillMaxSize())
+                        else Box(Modifier.fillMaxHeight().padding(end = 16.dp), contentAlignment = Alignment.Center) { cover() }
+                    }
                 }
             } else {
                 // 放得下时垂直居中；窗口特别矮（分屏缩成小窗）时可以上下滑，不会把按钮挤出屏幕
@@ -333,8 +355,20 @@ fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifi
                     Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = viewport),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
                 ) {
-                    if (bigCover) cover()
-                    PlayerControls(state, sleepMinutesLeft, accent, a, Modifier.fillMaxWidth(), inlineCover = if (bigCover) null else cover)
+                    if (bigCover) {
+                        AnimatedContent(
+                            showTranscript,
+                            transitionSpec = { (fadeIn(tween(350)) + scaleIn(tween(350), initialScale = 0.96f)) togetherWith fadeOut(tween(200)) },
+                            contentAlignment = Alignment.Center, label = "coverOrTranscriptV",
+                        ) { on ->
+                            if (on && transcript != null) TranscriptPane(transcript, state.positionMs, accent, a.seekTo, Modifier.fillMaxWidth().height(coverSize))
+                            else cover()
+                        }
+                    }
+                    PlayerControls(
+                        state, sleepMinutesLeft, accent, a, Modifier.fillMaxWidth(), inlineCover = if (bigCover) null else cover,
+                        transcriptOn = if (canTranscript) showTranscript else null,
+                    )
                 }
             }
         }
@@ -345,6 +379,8 @@ fun FullPlayer(state: PlayerUi, sleepMinutesLeft: Int?, a: PlayerActions, modifi
 private fun PlayerControls(
     state: PlayerUi, sleepMinutesLeft: Int?, accent: Color, a: PlayerActions, modifier: Modifier,
     inlineCover: (@Composable () -> Unit)? = null,
+    /** null = 这个布局不提供文字稿 */
+    transcriptOn: Boolean? = null,
 ) {
     val ep = state.episode
     Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -374,36 +410,148 @@ private fun PlayerControls(
                 Text(if (state.durationMs > 0) "-" + Fmt.clock(state.durationMs - state.positionMs) else "", style = num, color = Color.White.copy(alpha = 0.85f))
             }
         }
-        // 主控制：只有三个，后退 · 播放 · 前进，等距居中；播放键是唯一的实心元素
+        // 主控制：倍速 · 后退 · 播放 · 前进 · 定时（官方的排法）；播放键是唯一的实心元素，其余同一尺寸、无底色。
+        // 太窄放不下五个时只留中间三个，倍速和定时移到下面一行
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val k = (maxWidth / 560.dp).coerceIn(0.7f, 1f)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(40.dp * k, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-                SkipButton(false, Color.White, 68.dp * k, ep != null, a.back)
-                PlayFab(state.isPlaying, state.buffering, ep != null, 120.dp * k, accent, Color(0xFF111217), a.toggle)
-                SkipButton(true, Color.White, 68.dp * k, ep != null, a.forward)
+            val roomy = maxWidth >= 440.dp
+            val k = (maxWidth / 640.dp).coerceIn(0.6f, 1f)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (roomy) 28.dp * k else 40.dp * k, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                    if (roomy) SpeedButton(state.speed, accent, a.cycleSpeed)
+                    SkipButton(false, Color.White, 68.dp * k, ep != null, a.back)
+                    PlayFab(state.isPlaying, state.buffering, ep != null, 120.dp * k, accent, Color(0xFF111217), a.toggle)
+                    SkipButton(true, Color.White, 68.dp * k, ep != null, a.forward)
+                    if (roomy) SleepButton(sleepMinutesLeft, accent, a.cycleSleep)
+                }
+                // 下面一行固定三个位置：左「简介」、中「播放列表」、右「文字稿」。以后再加功能放进右侧的「更多」，不加第二行
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Start) {
+                        if (!roomy) { SpeedButton(state.speed, accent, a.cycleSpeed); SleepButton(sleepMinutesLeft, accent, a.cycleSleep) }
+                        // 窄布局里点封面也能进简介，这里省掉
+                        else if (ep != null) QuietButton("简介", accent, onClick = a.openEpisode) { c -> Icon(Icons.Filled.Info, null, tint = c, modifier = Modifier.size(30.dp)) }
+                    }
+                    PillAction(Icons.AutoMirrored.Filled.QueueMusic, "播放列表", accent, stacked = false, onClick = a.openQueue)
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
+                        if (ep != null && transcriptOn != null) QuietButton(if (transcriptOn) "收起文字稿" else "文字稿", accent, active = transcriptOn, onClick = a.toggleTranscript) { c ->
+                            Icon(Icons.AutoMirrored.Filled.Subject, null, tint = c, modifier = Modifier.size(30.dp))
+                        }
+                    }
+                }
             }
         }
-        // 次要操作：倍速、定时、播放列表、简介，同一种胶囊等宽排一行；窄时图标在上文字在下
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val stacked = maxWidth < 600.dp
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val w = Modifier.weight(1f)
-                PillAction(Icons.Filled.Speed, "倍速 ${speedText(state.speed)}", accent, stacked, w, active = state.speed != 1f,
-                    label = { c ->
-                        AnimatedContent(state.speed, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "speed") { s ->
-                            Text(speedText(s), color = c, style = MaterialTheme.typography.labelLarge.merge(NumberStyle), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }, onClick = a.cycleSpeed)
-                PillAction(Icons.Filled.Bedtime, if (sleepMinutesLeft != null) "定时关闭，剩 $sleepMinutesLeft 分钟" else "定时关闭", accent, stacked, w,
-                    active = sleepMinutesLeft != null,
-                    label = { c ->
-                        AnimatedContent(sleepMinutesLeft, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "sleep") { m ->
-                            Text(if (m != null) "剩 $m 分" else "定时", color = c, style = MaterialTheme.typography.labelLarge.merge(NumberStyle), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }, onClick = a.cycleSleep)
-                PillAction(Icons.AutoMirrored.Filled.QueueMusic, "播放列表", accent, stacked, w, onClick = a.openQueue)
-                if (ep != null) PillAction(Icons.Filled.Info, "简介", accent, stacked, w, onClick = a.openEpisode)
+    }
+}
+
+/** 次要操作键：统一 72dp 圆形、无底色；打开状态用强调色 + 浅底，切换有渐变 */
+@Composable
+private fun QuietButton(desc: String, accent: Color, active: Boolean = false, onClick: () -> Unit, content: @Composable (Color) -> Unit) {
+    val fg by animateColorAsState(if (active) accent else Color.White.copy(alpha = 0.85f), tween(250), label = "quietFg")
+    val bg by animateColorAsState(if (active) accent.copy(alpha = 0.16f) else Color.Transparent, tween(250), label = "quietBg")
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(Dims.touch).clip(CircleShape).background(bg)
+            .semantics { contentDescription = desc }.pressable(pressedScale = 0.88f) { onClick() },
+    ) { content(fg) }
+}
+
+/** 倍速：直接显示当前倍速，点一下换下一档 */
+@Composable
+private fun SpeedButton(speed: Float, accent: Color, onClick: () -> Unit) =
+    QuietButton("倍速 ${speedText(speed)}", accent, active = speed != 1f, onClick = onClick) { c ->
+        AnimatedContent(speed, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) }, label = "speed") { s ->
+            Text(speedText(s), color = c, style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+    }
+
+/** 定时关闭：月亮图标；开着时下面小字显示剩余分钟 */
+@Composable
+private fun SleepButton(minutesLeft: Int?, accent: Color, onClick: () -> Unit) =
+    QuietButton(if (minutesLeft != null) "定时关闭，剩 $minutesLeft 分钟" else "定时关闭", accent, active = minutesLeft != null, onClick = onClick) { c ->
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Filled.Bedtime, null, tint = c, modifier = Modifier.size(if (minutesLeft != null) 24.dp else 30.dp))
+            androidx.compose.animation.AnimatedVisibility(minutesLeft != null) {
+                Text("${minutesLeft ?: 0}分", color = c, fontSize = 13.sp, fontWeight = FontWeight.Bold, style = NumberStyle)
             }
+        }
+    }
+
+/** 正在说的那一句：最后一个开始时间不晚于 [positionMs] 的句子；还没开始时是 -1 */
+fun currentLine(lines: List<TranscriptLine>, positionMs: Long): Int {
+    var lo = 0
+    var hi = lines.size - 1
+    var ans = -1
+    while (lo <= hi) {
+        val mid = (lo + hi) ushr 1
+        if (lines[mid].startMs <= positionMs) { ans = mid; lo = mid + 1 } else hi = mid - 1
+    }
+    return ans
+}
+
+/**
+ * 文字稿：当前这句高亮放大，其余变淡，播放时自动滚到当前句（停在上方三分之一处）。
+ * 手动滑动后 5 秒内不自动滚；点某一句跳到那里播放。上下边缘渐隐
+ */
+@Composable
+private fun TranscriptPane(t: TranscriptUi, positionMs: Long, accent: Color, onSeek: (Long) -> Unit, modifier: Modifier) {
+    androidx.compose.animation.Crossfade(t, modifier, animationSpec = tween(300), label = "transcriptState") { s ->
+        when (s) {
+            TranscriptUi.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(Modifier.size(40.dp), color = accent, strokeWidth = 3.dp)
+            }
+            is TranscriptUi.None -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(s.message, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.titleMedium)
+            }
+            is TranscriptUi.Ready -> TranscriptLines(s.lines, positionMs, accent, onSeek)
+        }
+    }
+}
+
+@Composable
+private fun TranscriptLines(lines: List<TranscriptLine>, positionMs: Long, accent: Color, onSeek: (Long) -> Unit) {
+    val pos by androidx.compose.runtime.rememberUpdatedState(positionMs)
+    // 进度每 0.5 秒变一次，句子要几秒才换：只在换句时重组
+    val current by remember(lines) { androidx.compose.runtime.derivedStateOf { currentLine(lines, pos) } }
+    // 打开时直接停在当前这句附近，不从头滚下来
+    val list = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = (currentLine(lines, positionMs) - 2).coerceAtLeast(0))
+    val dragged by list.interactionSource.collectIsDraggedAsState()
+    var touchedAt by remember { mutableStateOf(0L) }
+    androidx.compose.runtime.LaunchedEffect(dragged) { if (dragged) touchedAt = android.os.SystemClock.elapsedRealtime() }
+    androidx.compose.runtime.LaunchedEffect(current, dragged) {
+        if (dragged || current < 0) return@LaunchedEffect
+        val idle = android.os.SystemClock.elapsedRealtime() - touchedAt
+        if (idle < 5_000) kotlinx.coroutines.delay(5_000 - idle)
+        val lead = (list.layoutInfo.viewportSize.height / 3).coerceAtLeast(0)
+        list.animateScrollToItem(current, -lead)
+    }
+    androidx.compose.foundation.lazy.LazyColumn(
+        state = list,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 48.dp),
+        modifier = Modifier.fillMaxSize()
+            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                val fade = 56.dp.toPx().coerceAtMost(size.height / 4)
+                drawRect(Brush.verticalGradient(0f to Color.Transparent, fade / size.height to Color.Black, 1f - fade / size.height to Color.Black, 1f to Color.Transparent), blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+            },
+    ) {
+        items(lines.size) { i ->
+            val on = i == current
+            val alpha by animateFloatAsState(if (on) 1f else 0.42f, tween(350), label = "lineAlpha")
+            val scale by animateFloatAsState(if (on) 1f else 0.94f, tween(350), label = "lineScale")
+            Text(
+                lines[i].text,
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                modifier = Modifier.fillMaxWidth()
+                    .graphicsLayer { this.alpha = alpha; scaleX = scale; scaleY = scale; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) }
+                    .clip(RoundedCornerShape(12.dp))
+                    .pressable(pressedScale = 0.98f) { onSeek(lines[i].startMs) }
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+            )
+        }
+        item {
+            Text("*文稿由小宇宙自动生成，点任意一句跳到那里", color = Color.White.copy(alpha = 0.45f), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
         }
     }
 }

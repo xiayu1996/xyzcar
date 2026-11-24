@@ -221,6 +221,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** 全屏播放页（盖在内容上，从底部滑出；不进路由栈，返回键先关它） */
     var playerExpanded by mutableStateOf(false)
 
+    /** 全屏播放页显示文字稿（代替封面）；记住上次的选择 */
+    var transcriptOn by mutableStateOf(app.local.transcriptOn)
+        private set
+    fun toggleTranscript() { transcriptOn = !transcriptOn; app.local.transcriptOn = transcriptOn }
+
+    /** 读文字稿：没有、接口报错都变成一句提示，不弹错误 */
+    suspend fun loadTranscript(eid: String): com.ryan.xyzcar.ui.components.TranscriptUi = try {
+        val lines = repo.transcript(eid)
+        if (lines.isEmpty()) com.ryan.xyzcar.ui.components.TranscriptUi.None("这一集没有文字稿")
+        else com.ryan.xyzcar.ui.components.TranscriptUi.Ready(lines)
+    } catch (e: Exception) {
+        if (e is kotlinx.coroutines.CancellationException) throw e
+        if (e is AuthExpiredException) onAuthExpired()
+        com.ryan.xyzcar.ui.components.TranscriptUi.None(if (e is com.ryan.xyzcar.data.api.ApiException) "这一集暂时没有文字稿" else errorText(e))
+    }
+
     /** 「推荐」页的分类面板是否展开（「发现」页的「分类」入口会打开它） */
     var categoriesOpen by mutableStateOf(false)
 

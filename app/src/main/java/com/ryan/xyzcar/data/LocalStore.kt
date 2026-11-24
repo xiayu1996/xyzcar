@@ -109,6 +109,10 @@ class LocalStore(context: Context, private val account: () -> String? = { Accoun
         set(v) = prefs.edit().putInt("content_size", v.coerceIn(0, SIZE_SCALES.lastIndex)).remove("size_level").remove("ui_scale").apply()
 
     /** 上次成功检查更新的时间；自动检查每天最多一次 */
+    var transcriptOn: Boolean
+        get() = prefs.getBoolean("transcript_on", false)
+        set(v) = prefs.edit().putBoolean("transcript_on", v).apply()
+
     var lastUpdateCheck: Long
         get() = prefs.getLong("last_update_check", 0L)
         set(v) = prefs.edit().putLong("last_update_check", v).apply()

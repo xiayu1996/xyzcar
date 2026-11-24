@@ -47,6 +47,21 @@ class ParsingTest {
         assertEquals("", sections[0].topCategory)
     }
 
+    /** 文字稿：gzip 压缩的 [{text, startMs}]，空句子跳过、按时间排序；当前句按播放位置二分查找 */
+    @Test
+    fun transcriptParsing() {
+        val raw = """[{"text":"第二句","startMs":5000},{"text":"  ","startMs":7000},{"text":"第一句","startMs":1000.0}]"""
+        val gz = java.io.ByteArrayOutputStream().also { o -> java.util.zip.GZIPOutputStream(o).use { it.write(raw.toByteArray()) } }.toByteArray()
+        val lines = api.parseTranscript(api.gunzipIfNeeded(gz).decodeToString())
+        assertEquals(listOf("第一句" to 1000L, "第二句" to 5000L), lines.map { it.text to it.startMs })
+        assertEquals(raw, api.gunzipIfNeeded(raw.toByteArray()).decodeToString())
+        assertEquals(-1, com.ryan.xyzcar.ui.components.currentLine(lines, 500))
+        assertEquals(0, com.ryan.xyzcar.ui.components.currentLine(lines, 4999))
+        assertEquals(1, com.ryan.xyzcar.ui.components.currentLine(lines, 5000))
+        assertEquals(1, com.ryan.xyzcar.ui.components.currentLine(lines, 99_000))
+        assertTrue(api.parseTranscript("not json").isEmpty())
+    }
+
     /** 列表里的单集不带 shownotes、简介截短；单集详情保留完整内容 */
     @Test
     fun listEpisodesAreLite() {

@@ -43,7 +43,12 @@ data class Episode(
     val paid: Boolean = false,
     /** 服务端标记已听完 */
     val finished: Boolean = false,
+    /** 文字稿的媒体 id（接口 transcript.mediaId）；空 = 这一集没有文字稿 */
+    val transcriptMediaId: String = "",
 )
+
+/** 文字稿的一句：从 [startMs] 开始说 [text] */
+data class TranscriptLine(val startMs: Long, val text: String)
 
 /**
  * 列表里用的精简单集：去掉 shownotes（HTML，常有几 KB），简介只留开头。

@@ -370,6 +370,12 @@ class UiSnapshots {
         shot { XyzCarTheme(ThemeMode.Light) { FullPlayer(playing, 15, noop) } }
     }
 
+    /** 全屏播放页打开文字稿：代替封面，当前句高亮 */
+    @Test fun playerTranscript() {
+        paparazzi.unsafeUpdateConfig(config(night = false))
+        shot { XyzCarTheme(ThemeMode.Light) { FullPlayer(playing, 15, noop, transcript = com.ryan.xyzcar.ui.components.TranscriptUi.Ready(DemoData.transcript())) } }
+    }
+
     /** 分屏 1/2 的全屏播放页：上下排列 */
     @Test fun playerSplit() {
         paparazzi.unsafeUpdateConfig(config(night = false, widthPx = 960))
